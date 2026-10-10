@@ -1,35 +1,42 @@
 # NCHURE CRM
 
-NCHURE Client & Business Management CRM with a static HTML/Tailwind frontend and FastAPI/PostgreSQL backend.
+NCHURE CRM is a starter client, enquiry, project and operations dashboard.
 
 ## Stack
 - Frontend: HTML, Tailwind CSS, Vanilla JavaScript, Chart.js
-- Backend: FastAPI, Python, PostgreSQL/Supabase
-- Hosting: Vercel
+- API: FastAPI + Python
+- Database: Supabase PostgreSQL
+- Hosting configuration: Vercel (vercel.json)
 
-## Environment variables
-Set these in Vercel:
-- `DATABASE_URL` = Supabase PostgreSQL connection string
-- `JWT_SECRET` = long random production secret
+## Important security notes
+- Do not commit .env files, database URLs, passwords, or Supabase service-role keys.
+- The API uses a server-side PostgreSQL connection string and a strong JWT_SECRET.
+- No default login credentials are shipped. Configure the initial Founder account using hosting environment variables before first deployment.
+- This is an MVP starter, not yet a complete multi-tenant production CRM. Add per-organization authorization, role-based permissions, rate limiting, and security tests before exposing it to real customer data.
 
-Never commit `.env` or database passwords.
+## Supabase setup
+A dedicated Supabase project has been created for NCHURE Lead Management. The application uses the namespaced tables crm_users, crm_clients, crm_leads, crm_projects, crm_tasks, crm_invoices, crm_payments, and crm_expenses. These are separate from the newer lead-management schema in the same project.
 
-## API
-- `GET /health`
-- `POST /api/auth/login`
-- `GET /api/auth/me`
-- `GET /api/state`
-- CRUD: `/api/clients`, `/api/leads`, `/api/projects`, `/api/tasks`, `/api/invoices`, `/api/payments`, `/api/expenses`
+The database migration has been applied through Supabase. Use the PostgreSQL Transaction Pooler connection string from Supabase Connect where possible. Add it to the hosting provider as DATABASE_URL; never expose it in frontend code.
 
-## Initial accounts
-- Founder: jero@nchure.com / jero123
-- Founder: amar@nchure.com / amar123
-- Admin: ashin@nchure.com / ashin123
+## Required hosting environment variables
+- DATABASE_URL: Supabase PostgreSQL pooler connection string (server-side secret)
+- JWT_SECRET: cryptographically random secret, at least 32 characters
+- INITIAL_ADMIN_EMAIL: the first Founder account email
+- INITIAL_ADMIN_PASSWORD: a unique password of at least 14 characters
+- INITIAL_ADMIN_NAME: optional display name
+- CORS_ORIGINS: optional comma-separated allowed origins (same-origin hosting does not need this)
 
-Change these passwords after first production login.
+On first startup, if the configured initial admin email does not exist, the API creates that Founder account. The password is hashed with PBKDF2. Remove INITIAL_ADMIN_PASSWORD from the hosting environment after the first successful initialization.
 
-## Vercel
-Import this repository as a Vercel project. The included `vercel.json` routes `/api/*` to the FastAPI entrypoint and serves `index.html` for the frontend.
+## Deploy
+1. Import kennyjeron/nchure-crm into Vercel (or open the existing Vercel project linked to this repo).
+2. Add the environment variables above in Vercel Project Settings -> Environment Variables for Production and Preview as appropriate.
+3. Redeploy after setting variables.
+4. Check /health. Confirm database_connected: true.
+5. Test Founder login and CRUD using non-sensitive test records.
 
-## Database
-The API can create its core tables automatically on startup. For an existing Supabase CRM database, keep the existing schema and set `DATABASE_URL` to the project's pooled PostgreSQL connection string.
+The repository's Vercel configuration routes /api/* and /health to api/index.py and serves index.html.
+
+## Known limitations
+The current UI is an early MVP. Tenant isolation and fine-grained permissions are not complete, so do not use it for confidential or real client data until these are implemented and tested.
