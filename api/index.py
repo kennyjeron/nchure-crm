@@ -1,6 +1,10 @@
 import os
+import hashlib
+import hmac
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
+
 import jwt
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,90 +12,187 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from psycopg_pool import ConnectionPool
 
-app=FastAPI(title='NCHURE CRM API',version='1.0.0')
-app.add_middleware(CORSMiddleware,allow_origins=['*'],allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
-DATABASE_URL=os.getenv('DATABASE_URL') or os.getenv('SUPABASE_DB_URL')
-SECRET=os.getenv('JWT_SECRET','change-this-in-production')
-pool=ConnectionPool(DATABASE_URL,open=False) if DATABASE_URL else None
-security=HTTPBearer(auto_error=False)
+app = FastAPI(title="NCHURE CRM API", version="1.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[x.strip() for x in os.getenv("CORS_ORIGINS", "").split(",") if x.strip()],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 
-SCHEMA='''create table if not exists users(id bigserial primary key,name text not null,email text unique not null,password_hash text not null,role text not null default 'Admin',created_at timestamptz default now());
-create table if not exists clients(id bigserial primary key,company text,contact text,email text,phone text,status text default 'Active',created_at timestamptz default now());
-create table if not exists leads(id bigserial primary key,name text,company text,contact text,status text default 'New',priority text default 'Medium',created_at timestamptz default now());
-create table if not exists projects(id bigserial primary key,name text,client_id bigint,status text default 'Planning',budget numeric default 0,created_at timestamptz default now());
-create table if not exists tasks(id bigserial primary key,title text,status text default 'Pending',priority text default 'Medium',due_date text,created_at timestamptz default now());
-create table if not exists invoices(id bigserial primary key,number text,client_id bigint,status text default 'Draft',total numeric default 0,created_at timestamptz default now());
-create table if not exists payments(id bigserial primary key,invoice_id bigint,amount numeric default 0,method text,created_at timestamptz default now());
-create table if not exists expenses(id bigserial primary key,title text,amount numeric default 0,category text,created_at timestamptz default now());'''
+DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
+SECRET = os.getenv("JWT_SECRET")
+pool = ConnectionPool(DATABASE_URL, open=False, kwargs={"autocommit": False}) if DATABASE_URL else None
+security = HTTPBearer(auto_error=False)
+
+MAP = {
+    "clients": ["company", "contact", "email", "phone", "status"],
+    "leads": ["name", "company", "contact", "status", "priority"],
+    "projects": ["name", "client_id", "status", "budget"],
+    "tasks": ["title", "status", "priority", "due_date"],
+    "invoices": ["number", "client_id", "status", "total"],
+    "payments": ["invoice_id", "amount", "method"],
+    "expenses": ["title", "amount", "category"],
+}
+TABLES = {name: "crm_" + name for name in MAP}
+
 
 def db():
- if not pool: raise HTTPException(500,'DATABASE_URL is not configured')
- return pool.connection()
-@app.on_event('startup')
+    if not pool:
+        raise HTTPException(503, "Database is not configured. Set DATABASE_URL in the hosting environment.")
+    return pool.connection()
+
+
+def hashpw(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    derived = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 310_000)
+    return "pbkdf2_sha256$310000$" + salt.hex() + "$" + derived.hex()
+
+
+def verify(stored: str, password: str) -> bool:
+    try:
+        algorithm, rounds, salt_hex, digest_hex = stored.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        derived = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt_hex), int(rounds))
+        return hmac.compare_digest(derived.hex(), digest_hex)
+    except (ValueError, TypeError):
+        return False
+
+
+def token(user):
+    if not SECRET or len(SECRET) < 32:
+        raise HTTPException(503, "JWT_SECRET must be configured as a random secret of at least 32 characters.")
+    return jwt.encode(
+        {"sub": str(user["id"]), "email": user["email"], "role": user["role"],
+         "exp": datetime.now(timezone.utc) + timedelta(hours=8)},
+        SECRET, algorithm="HS256"
+    )
+
+
+def current(creds: HTTPAuthorizationCredentials = Depends(security)):
+    if not creds:
+        raise HTTPException(401, "Authentication required")
+    if not SECRET or len(SECRET) < 32:
+        raise HTTPException(503, "Authentication is not configured.")
+    try:
+        return jwt.decode(creds.credentials, SECRET, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        raise HTTPException(401, "Invalid or expired token")
+
+
+class Login(BaseModel):
+    email: EmailStr
+    password: str
+
+
+@app.on_event("startup")
 def startup():
- if pool:
-  pool.open()
-  with pool.connection() as c:c.execute(SCHEMA)
+    if pool:
+        pool.open()
+        # Optional first account bootstrap. No hard-coded/default credentials are shipped.
+        email = os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower()
+        password = os.getenv("INITIAL_ADMIN_PASSWORD", "")
+        name = os.getenv("INITIAL_ADMIN_NAME", "NCHURE Founder").strip() or "NCHURE Founder"
+        if email and password:
+            if len(password) < 14:
+                raise RuntimeError("INITIAL_ADMIN_PASSWORD must be at least 14 characters.")
+            with pool.connection() as conn:
+                existing = conn.execute("SELECT id FROM public.crm_users WHERE lower(email)=lower(%s)", (email,)).fetchone()
+                if not existing:
+                    conn.execute(
+                        "INSERT INTO public.crm_users(name,email,password_hash,role) VALUES (%s,%s,%s,'Founder')",
+                        (name, email, hashpw(password)),
+                    )
 
-def token(user): return jwt.encode({'sub':str(user['id']),'email':user['email'],'role':user['role'],'exp':datetime.now(timezone.utc)+timedelta(hours=12)},SECRET,algorithm='HS256')
-def current(creds:HTTPAuthorizationCredentials=Depends(security)):
- if not creds: raise HTTPException(401,'Authentication required')
- try:return jwt.decode(creds.credentials,SECRET,algorithms=['HS256'])
- except jwt.PyJWTError:raise HTTPException(401,'Invalid or expired token')
 
-class Login(BaseModel): email:EmailStr; password:str
-class AnyBody(BaseModel): data:dict[str,Any]={}
+@app.get("/health")
+def health():
+    database_ok = False
+    if pool:
+        try:
+            with pool.connection() as conn:
+                conn.execute("SELECT 1")
+            database_ok = True
+        except Exception:
+            database_ok = False
+    return {"ok": True, "service": "nchure-crm-api", "database_configured": bool(DATABASE_URL), "database_connected": database_ok}
 
-def verify(stored,pw):
- import hashlib,hmac
- if stored.startswith('sha256$'): return hmac.compare_digest(stored.split('$',1)[1],hashlib.sha256(pw.encode()).hexdigest())
- return hmac.compare_digest(stored,pw)
 
-def hashpw(pw):
- import hashlib;return 'sha256$'+hashlib.sha256(pw.encode()).hexdigest()
+@app.post("/api/auth/login")
+def login(x: Login):
+    if not SECRET or len(SECRET) < 32:
+        raise HTTPException(503, "JWT_SECRET is not configured.")
+    with db() as conn:
+        user = conn.execute(
+            "SELECT id,name,email,password_hash,role,is_active FROM public.crm_users WHERE lower(email)=lower(%s)",
+            (x.email,),
+        ).fetchone()
+    if not user or not user[5] or not verify(user[3], x.password):
+        raise HTTPException(401, "Invalid email or password")
+    access_token = token({"id": user[0], "email": user[2], "role": user[4]})
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {"id": user[0], "name": user[1], "email": user[2], "role": user[4]},
+    }
 
-@app.get('/health')
-def health():return {'ok':True,'service':'nchure-crm-api','database':bool(DATABASE_URL)}
-@app.post('/api/auth/login')
-def login(x:Login):
- with db() as c:
-  u=c.execute('select id,name,email,password_hash,role from users where lower(email)=lower(%s)',(x.email,)).fetchone()
-  if not u or not verify(u[3],x.password): raise HTTPException(401,'Invalid email or password')
-  return {'access_token':token({'id':u[0],'email':u[2],'role':u[4]}),'token_type':'bearer','user':{'id':u[0],'name':u[1],'email':u[2],'role':u[4]}}
-@app.get('/api/auth/me')
-def me(u=Depends(current)):
- with db() as c:
-  x=c.execute('select id,name,email,role from users where id=%s',(u['sub'],)).fetchone()
-  if not x: raise HTTPException(401,'User not found')
-  return {'id':x[0],'name':x[1],'email':x[2],'role':x[3]}
 
-MAP={'clients':['company','contact','email','phone','status'],'leads':['name','company','contact','status','priority'],'projects':['name','client_id','status','budget'],'tasks':['title','status','priority','due_date'],'invoices':['number','client_id','status','total'],'payments':['invoice_id','amount','method'],'expenses':['title','amount','category']}
-@app.get('/api/state')
-def state(u=Depends(current)):
- return {k:list_rows(k) for k in MAP}
-def list_rows(r):
- with db() as c:return [dict(zip([d.name for d in c.description],row)) for row in c.execute('select * from '+r+' order by id desc').fetchall()]
+@app.get("/api/auth/me")
+def me(user=Depends(current)):
+    with db() as conn:
+        row = conn.execute(
+            "SELECT id,name,email,role,is_active FROM public.crm_users WHERE id=%s",
+            (user["sub"],),
+        ).fetchone()
+    if not row or not row[4]:
+        raise HTTPException(401, "User not found or disabled")
+    return {"id": row[0], "name": row[1], "email": row[2], "role": row[3]}
 
-def routes(r):
- @app.get('/api/'+r)
- def ls(u=Depends(current)):return list_rows(r)
- @app.post('/api/'+r)
- def create(body:dict,u=Depends(current)):
-  fs=[f for f in MAP[r] if f in body]
-  if not fs: raise HTTPException(400,'No writable fields')
-  vals=[body[f] for f in fs]; marks=','.join(['%s']*len(fs))
-  with db() as c:
-   row=c.execute(f"insert into {r} ({','.join(fs)}) values ({marks}) returning *",vals).fetchone();return dict(zip([d.name for d in c.description],row))
- @app.delete('/api/'+r+'/{id}')
- def delete(id:int,u=Depends(current)):
-  with db() as c:c.execute('delete from '+r+' where id=%s',(id,))
-  return {'ok':True}
-for _r in MAP: routes(_r)
 
-@app.post('/api/seed')
-def seed(u=Depends(current)):
- if u.get('role') not in ('Founder','Admin'): raise HTTPException(403,'Admin access required')
- accounts=[('Jero','jero@nchure.com','Founder','jero123'),('Amar','amar@nchure.com','Founder','amar123'),('Ashin','ashin@nchure.com','Admin','ashin123')]
- with db() as c:
-  for n,e,r,p in accounts:c.execute('insert into users(name,email,password_hash,role) values(%s,%s,%s,%s) on conflict(email) do update set name=excluded.name,password_hash=excluded.password_hash,role=excluded.role',(n,e,hashpw(p),r))
- return {'ok':True,'accounts':[x[1] for x in accounts]}
+@app.get("/api/state")
+def state(user=Depends(current)):
+    return {name: list_rows(name) for name in MAP}
+
+
+def list_rows(resource):
+    with db() as conn:
+        cursor = conn.execute(f"SELECT * FROM public.{TABLES[resource]} ORDER BY id DESC LIMIT 1000")
+        return [dict(zip([d.name for d in cursor.description], row)) for row in cursor.fetchall()]
+
+
+def register_routes(resource):
+    table = TABLES[resource]
+    allowed = MAP[resource]
+
+    @app.get("/api/" + resource)
+    def list_endpoint(user=Depends(current), _resource=resource):
+        return list_rows(_resource)
+
+    @app.post("/api/" + resource)
+    def create_endpoint(body: dict[str, Any], user=Depends(current), _table=table, _allowed=allowed):
+        fields = [field for field in _allowed if field in body]
+        if not fields:
+            raise HTTPException(400, "No writable fields")
+        values = [body[field] for field in fields]
+        marks = ",".join(["%s"] * len(fields))
+        with db() as conn:
+            cursor = conn.execute(
+                f"INSERT INTO public.{_table} ({','.join(fields)}) VALUES ({marks}) RETURNING *",
+                values,
+            )
+            row = cursor.fetchone()
+            return dict(zip([d.name for d in cursor.description], row))
+
+    @app.delete("/api/" + resource + "/{record_id}")
+    def delete_endpoint(record_id: int, user=Depends(current), _table=table):
+        with db() as conn:
+            cursor = conn.execute(f"DELETE FROM public.{_table} WHERE id=%s", (record_id,))
+            if cursor.rowcount == 0:
+                raise HTTPException(404, "Record not found")
+        return {"ok": True}
+
+
+for resource_name in MAP:
+    register_routes(resource_name)
