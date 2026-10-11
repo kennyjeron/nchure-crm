@@ -63,6 +63,48 @@ tbody tr:hover{background:var(--input)}
 .tag{font-size:10.5px;padding:2px 8px;border-radius:6px;background:var(--input);border:1px solid var(--border);color:var(--muted);font-weight:600}
 .ai-bub{max-width:85%;padding:10px 14px;border-radius:14px;font-size:13px;line-height:1.55}
 .chatrow{display:flex;gap:10px;align-items:flex-start;margin-bottom:12px}
+
+/* Responsive workspace layout: navigation, forms and modals adapt to tablets and phones */
+.sidebar-backdrop{display:none}
+.mobile-menu-btn{display:none!important}
+.app-main{min-width:0;width:calc(100% - 232px)}
+.app-content{width:100%;box-sizing:border-box}
+#root{min-width:0;max-width:100%;overflow-x:clip}
+.card{min-width:0;max-width:100%}
+.input,select,textarea{max-width:100%;min-width:0}
+.formgrid>*{min-width:0}
+@media(max-width:900px){
+  #sidebar{transform:translateX(-105%);transition:transform .22s ease;box-shadow:12px 0 35px rgba(0,0,0,.22)}
+  #sidebar.mobile-open{transform:translateX(0)}
+  .sidebar-backdrop.visible{display:block;position:fixed;inset:0;background:rgba(8,12,28,.45);z-index:39}
+  .mobile-menu-btn{display:inline-flex!important;align-items:center;justify-content:center;flex:none}
+  .app-main{margin-left:0!important;width:100%}
+  .app-header{padding:10px 12px!important;gap:8px!important}
+  .app-content{padding:12px!important}
+  .formgrid{grid-template-columns:1fr!important}
+  .logingrid{grid-template-columns:1fr!important}
+  .logingrid>div:first-child{border-radius:22px 22px 0 0!important;padding:28px 24px!important}
+  .logingrid>div:last-child{border-radius:0 0 22px 22px!important;padding:28px 24px!important;border-left:1px solid var(--border)!important}
+  .modal-bg{padding:8px!important;align-items:flex-start;overflow-y:auto}
+  .modal{margin:auto;max-height:calc(100dvh - 16px)!important;max-width:100%!important}
+  #modalBody{padding:14px!important}
+  #modalFoot{padding:0 14px 14px!important;flex-wrap:wrap}
+}
+@media(max-width:600px){
+  .app-header>div:first-of-type{min-width:0!important;flex:1 1 150px!important}
+  .app-header .input{font-size:12px}
+  .app-header>div:last-of-type{gap:5px!important}
+  .app-header>div:last-of-type>div{max-width:92px;overflow-wrap:anywhere}
+  .app-content{padding:10px!important}
+  .dashgrid{grid-template-columns:1fr!important}
+  .formgrid{grid-template-columns:minmax(0,1fr)!important}
+  .modal{border-radius:14px!important}
+  #modalFoot>.btn{flex:1 1 auto}
+  table{min-width:620px}
+  .kcol{min-width:250px}
+  .btn{max-width:100%}
+}
+
 </style>
 </head>
 <body>
@@ -351,27 +393,36 @@ const PNAV=[
 {label:'More',items:[{route:'#/p-documents',icon:'doc',label:'Documents'},{route:'#/p-support',icon:'ticket',label:'Support'},{route:'#/p-messages',icon:'msg',label:'Messages'},{route:'#/p-profile',icon:'team',label:'Profile'}]}
 ];
 function curRoute(){return (location.hash||'#/dashboard').replace('#/','')}
+function toggleSidebar(force){
+ const side=$('#sidebar'), backdrop=$('#sidebarBackdrop');
+ if(!side||!backdrop)return;
+ const open=typeof force==='boolean'?force:!side.classList.contains('mobile-open');
+ side.classList.toggle('mobile-open',open);
+ backdrop.classList.toggle('visible',open);
+}
 function layoutShell(active,content){
 const groups=NAV.map(g=>{
 const items=g.items.filter(it=>can(it.mod));if(!items.length)return '';
-return (g.label?'<div class="navgroup">'+g.label+'</div>':'<div style="height:8px"></div>')+items.map(it=>'<div class="navitem '+(active.split('-')[0]===it.route.replace('#/','')?'active':'')+'" onclick="location.hash=\''+it.route+'\'">'+ic(it.icon)+'<span>'+it.label+'</span></div>').join('');
+return (g.label?'<div class="navgroup">'+g.label+'</div>':'<div style="height:8px"></div>')+items.map(it=>'<div class="navitem '+(active.split('-')[0]===it.route.replace('#/','')?'active':'')+'" onclick="toggleSidebar(false);location.hash=\''+it.route+'\'">'+ic(it.icon)+'<span>'+it.label+'</span></div>').join('');
 }).join('');
 const unread=db.notifications.filter(n=>!n.read).length;
-return '<div style="display:flex;min-height:100vh">'+
+return '<div style="display:flex;min-height:100vh;width:100%;min-width:0">'+
 '<aside style="width:232px;flex:none;background:var(--side);border-right:1px solid var(--border);padding:14px 12px;display:flex;flex-direction:column;gap:2px;position:fixed;top:0;bottom:0;left:0;overflow:auto;z-index:40" id="sidebar">'+
 '<div style="display:flex;align-items:center;gap:10px;padding:6px 8px 12px"><div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px">N</div><div><div style="font-weight:800;font-size:15px;letter-spacing:.3px">'+esc(db.settings.company)+'</div><div style="font-size:9.5px;color:var(--muted)">'+esc(db.settings.tagline)+'</div></div></div>'+
 groups+
 '<div style="flex:1"></div>'+
 '<div class="navitem" onclick="logout()" style="color:#ef4444">'+ic('out')+'<span>Logout</span></div>'+
 '</aside>'+
-'<div style="flex:1;margin-left:232px;min-width:0">'+
-'<header style="position:sticky;top:0;z-index:30;background:var(--bg);padding:12px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);flex-wrap:wrap">'+
+'<div id="sidebarBackdrop" class="sidebar-backdrop" onclick="toggleSidebar(false)"></div>'+
+'<div class="app-main" style="flex:1;margin-left:232px;min-width:0">'+
+'<header class="app-header" style="position:sticky;top:0;z-index:30;background:var(--bg);padding:12px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);flex-wrap:wrap">'+
+'<button class="btn btn-ghost btn-sm mobile-menu-btn" onclick="toggleSidebar()" aria-label="Open navigation">'+ic('menu',18)+'</button>'+
 '<div style="flex:1;min-width:180px;position:relative"><input class="input" placeholder="Search clients, projects, tasks…" oninput="globalSearch(this.value)" style="padding-left:34px" id="gsearch">'+ic('search',15).replace('<svg','<svg style="position:absolute;left:11px;top:10px;color:var(--muted)"')+'<div id="gsResults" style="position:absolute;top:40px;left:0;right:0;border-radius:14px;overflow:hidden;box-shadow:0 16px 40px rgba(0,0,0,.18);display:none;z-index:50"></div></div>'+
 '<button class="btn btn-ghost btn-sm" onclick="toggleTheme()" title="Toggle dark mode">'+ic('dark',15)+'</button>'+
 '<button class="btn btn-ghost btn-sm" style="position:relative" onclick="toggleNotif(event)">'+ic('bell',16)+(unread?'<span style="position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;border-radius:99px;font-size:9.5px;font-weight:700;padding:1px 5px;min-width:16px">'+unread+'</span>':'')+'</button>'+
 '<div style="display:flex;align-items:center;gap:8px">'+avatar(session.user.name,32)+'<div style="line-height:1.25"><div style="font-size:12.5px;font-weight:600">'+esc(session.user.name)+'</div><div style="font-size:10.5px;color:var(--muted)">'+esc(session.user.role)+'</div></div></div>'+
 '</header>'+
-'<main style="padding:20px;max-width:1400px">'+content+'</main>'+
+'<main class="app-content" style="padding:20px;max-width:1400px">'+content+'</main>'+
 '</div></div>';
 }
 function toggleTheme(){const d=document.documentElement.classList.toggle('dark');localStorage.setItem(THEME_KEY,d?'dark':'light');render()}
@@ -1002,15 +1053,17 @@ function userForm(id){
  const u=id?db.users.find(x=>x.id===id):null;
  if(id&&!u){toast('Team member not found','err');return}
  const hasAccount=!!u&&(u.authId!=null||/^\d+$/.test(String(u.id||'')));
- const allowedRoles=session.user&&session.user.role==='Founder'?STAFF_ROLES:STAFF_ROLES.filter(r=>!LEADERSHIP_ROLES.includes(r));
- if(id&&LEADERSHIP_ROLES.includes(u?.role)&&session.user?.role!=='Founder'){toast('Only Founder can edit this leadership role','err');return}
+ const isSelf=!!u&&String(u.authId!=null?u.authId:u.id)===String(session.user?.id);
+ const hideOwnPassword=isSelf&&session.user?.role==='CEO';
+ const allowedRoles=session.user&&session.user.role==='Founder'?STAFF_ROLES:STAFF_ROLES.filter(r=>r!=='Founder');
+ if(id&&u?.role==='Founder'&&session.user?.role!=='Founder'){toast('Only Founder can edit the Founder profile','err');return}
  const passwordLabel=hasAccount?'New Password (optional)':'Password*';
- const passwordHelp=hasAccount?'Leave blank to keep the current password.':'Initial sign-in password; use at least 14 characters.';
+ const passwordHelp=hideOwnPassword?'Password changes are disabled from your own CEO profile.':(hasAccount?'Leave blank to keep the current password.':'Initial sign-in password; use at least 14 characters.');
  const body='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" class="formgrid">'+
  f('Name*','','<input class="input" id="uf-name" autocomplete="name" required value="'+esc(u?.name||'')+'">')+
  f('Email*','','<input class="input" id="uf-email" type="email" autocomplete="email" required value="'+esc(u?.email||'')+'">')+
- f(passwordLabel,'','<input class="input" id="uf-password" type="password" autocomplete="new-password" '+(!hasAccount?'required':'')+' minlength="14" placeholder="'+(hasAccount?'Leave blank to keep current password':'Minimum 14 characters')+'">')+
- '<div><label class="muted" style="font-size:11px;font-weight:600">Role*</label><select class="input" id="uf-role" required>'+allowedRoles.map(r=>'<option value="'+esc(r)+'" '+(u?.role===r?'selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div>'+
+ (hideOwnPassword?'':f(passwordLabel,'','<input class="input" id="uf-password" type="password" autocomplete="new-password" '+(!hasAccount?'required':'')+' minlength="14" placeholder="'+(hasAccount?'Leave blank to keep current password':'Minimum 14 characters')+'">'))+
+ '<div><label class="muted" style="font-size:11px;font-weight:600">Role*</label><select class="input" id="uf-role" required '+(isSelf?'disabled':'')+'>'+allowedRoles.map(r=>'<option value="'+esc(r)+'" '+(u?.role===r?'selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div>'+
  f('Department','','<input class="input" id="uf-dept" placeholder="e.g. Management, Engineering, Sales" value="'+esc(u?.dept||'')+'">')+
  f('Phone','','<input class="input" id="uf-phone" type="tel" autocomplete="tel" placeholder="+91…" value="'+esc(u?.phone||'')+'">')+
  f('Skills (comma separated)','','<input class="input" id="uf-skills" placeholder="Leadership, Strategy" value="'+esc((u?.skills||[]).join(', '))+'">')+
@@ -1023,12 +1076,12 @@ async function saveUser(id){
  const g=x=>($('#uf-'+x)?.value||'').trim();
  const u=id?db.users.find(x=>x.id===id):null;
  const hasAccount=!!u&&(u.authId!=null||/^\d+$/.test(String(u.id||'')));
- const allowedRoles=session.user&&session.user.role==='Founder'?STAFF_ROLES:STAFF_ROLES.filter(r=>!LEADERSHIP_ROLES.includes(r));
+ const allowedRoles=session.user&&session.user.role==='Founder'?STAFF_ROLES:STAFF_ROLES.filter(r=>r!=='Founder');
  const name=g('name'), email=g('email').toLowerCase(), role=g('role'), password=g('password');
  if(!name||!email){toast('Name and email required','err');return}
  if(!role||!allowedRoles.includes(role)){toast('You cannot assign that role','err');return}
  if((!hasAccount||password)&&password.length<14){toast('Password must be at least 14 characters','err');return}
- if(id&&LEADERSHIP_ROLES.includes(u?.role)&&session.user?.role!=='Founder'){toast('Only Founder can edit this leadership role','err');return}
+ if(id&&u?.role==='Founder'&&session.user?.role!=='Founder'){toast('Only Founder can edit the Founder profile','err');return}
  const duplicate=db.users.find(x=>String(x.email||'').toLowerCase()===email&&String(x.id)!==String(id||''));
  if(duplicate){toast('Email already exists in this workspace','err');return}
  const primary=$('#modalRoot .modal .btn-primary');
