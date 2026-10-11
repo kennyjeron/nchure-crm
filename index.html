@@ -94,8 +94,9 @@ const initials=n=>n.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
 const avatar=(n,size)=>{const cols=['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#0ea5e9','#f43f5e'];const c=cols[(n||'').length%7];return '<span style="width:'+size+'px;height:'+size+'px;background:'+c+';color:#fff;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:'+Math.round(size*.38)+'px;font-weight:700">'+esc(initials(n||'?'))+'</span>'};
 
 // ============ CONSTANTS ============
-const ROLES=['Founder','CEO','Admin','Sales Manager','Sales Executive','Project Manager','Developer','Designer','Content Team','Accountant','Support Executive','Client'];
+const ROLES=['Founder','CEO','CTO','COO','Admin','Team Leader','Sales Manager','Sales Executive','Project Manager','Developer','Designer','Content Team','Accountant','Support Executive','Staff','Client'];
 const STAFF_ROLES=ROLES.filter(r=>r!=='Client');
+const LEADERSHIP_ROLES=['Founder','CEO','CTO','COO','Admin','Team Leader'];
 const LEAD_STATUSES=['New','Contacted','Qualified','Meeting','Proposal Sent','Negotiation','Won','Lost'];
 const LEAD_SOURCES=['Website','Instagram','Facebook','Google','WhatsApp','Referral','LinkedIn','Advertisement','Direct','Other'];
 const LEAD_ST_COLORS={New:'b-blue',Contacted:'b-violet',Qualified:'b-amber',Meeting:'b-pink','Proposal Sent':'b-violet',Negotiation:'b-amber',Won:'b-green',Lost:'b-red'};
@@ -268,7 +269,8 @@ async function activateSession(me){
   if(!db.settings||typeof db.settings!=='object')db.settings={company:'NCHURE',tagline:'Business Growth Infrastructure',email:'',phone:'',address:'',gst:'',taxRate:18,currency:'₹',invoicePrefix:'INV',quotPrefix:'QT',services:[]};
   // Strip the previous mock logins; actual accounts are managed by the backend.
   db.users=db.users.filter(u=>u&&(!DEMO_EMAILS.has(String(u.email||'').toLowerCase())||String(u.email||'').toLowerCase()===String(me.email||'').toLowerCase()));
-  const user={id:String(me.id),name:me.name,email:me.email,role:me.role,dept:me.role==='Founder'||me.role==='CEO'?'Management':'Operations',phone:'',skills:[],joined:today()};
+  const previousUser=db.users.find(u=>String(u.email||'').toLowerCase()===String(me.email||'').toLowerCase())||{};
+  const user={...previousUser,id:String(me.id),authId:Number(me.id),name:me.name,email:me.email,role:me.role,dept:previousUser.dept||(me.role==='Founder'||me.role==='CEO'?'Management':'Operations'),phone:previousUser.phone||'',skills:Array.isArray(previousUser.skills)?previousUser.skills:[],joined:previousUser.joined||today()};
   db.users=db.users.filter(u=>String(u.email||'').toLowerCase()!==String(me.email||'').toLowerCase());
   db.users.unshift(user);
   session={user};
@@ -999,54 +1001,94 @@ function renderTeam(){
 function userForm(id){
  const u=id?db.users.find(x=>x.id===id):null;
  if(id&&!u){toast('Team member not found','err');return}
- const allowedRoles=session.user&&session.user.role==='Founder'?STAFF_ROLES:STAFF_ROLES.filter(r=>!['Founder','CEO','Admin'].includes(r));
- if(id&&['Founder','CEO','Admin'].includes(u?.role)&&session.user?.role!=='Founder'){toast('Only Founder can edit this leadership role','err');return}
+ const hasAccount=!!u&&(u.authId!=null||/^\\d+$/.test(String(u.id||'')));
+ const allowedRoles=session.user&&session.user.role==='Founder'?STAFF_ROLES:STAFF_ROLES.filter(r=>!LEADERSHIP_ROLES.includes(r));
+ if(id&&LEADERSHIP_ROLES.includes(u?.role)&&session.user?.role!=='Founder'){toast('Only Founder can edit this leadership role','err');return}
+ const passwordLabel=hasAccount?'New Password (optional)':'Password*';
+ const passwordHelp=hasAccount?'Leave blank to keep the current password.':'Initial sign-in password; use at least 14 characters.';
  const body='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" class="formgrid">'+
- f('Name*','','<input class="input" id="uf-name" value="'+esc(u?.name||'')+'">')+
- f('Email*','','<input class="input" id="uf-email" type="email" value="'+esc(u?.email||'')+'">')+
-  '<div><label class="muted" style="font-size:11px;font-weight:600">Role*</label><select class="input" id="uf-role">'+allowedRoles.map(r=>'<option value="'+esc(r)+'" '+(u?.role===r?'selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div>'+
- f('Department','','<input class="input" id="uf-dept" placeholder="e.g. Engineering" value="'+esc(u?.dept||'')+'">')+
- f('Phone','','<input class="input" id="uf-phone" value="'+esc(u?.phone||'')+'">')+
- f('Skills (comma separated)','','<input class="input" id="uf-skills" placeholder="React, Figma…" value="'+esc((u?.skills||[]).join(', '))+'">')+
- f('Joining Date','','<input class="input" id="uf-joined" type="date" value="'+esc(u?.joined||today())+'">')+'</div>'+'<div class="muted" style="font-size:11px;margin-top:10px">Team profile only. Sign-in accounts are managed separately by the CRM backend.</div>';
- openModal(u?'Edit Team Member':'Add Team Member',body,'<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveUser(\''+(id||'')+'\')">'+(u?'Save Changes':'Create')+'</button>',true);
+ f('Name*','','<input class="input" id="uf-name" autocomplete="name" required value="'+esc(u?.name||'')+'">')+
+ f('Email*','','<input class="input" id="uf-email" type="email" autocomplete="email" required value="'+esc(u?.email||'')+'">')+
+ f(passwordLabel,'','<input class="input" id="uf-password" type="password" autocomplete="new-password" '+(!hasAccount?'required':'')+' minlength="14" placeholder="'+(hasAccount?'Leave blank to keep current password':'Minimum 14 characters')+'">')+
+ '<div><label class="muted" style="font-size:11px;font-weight:600">Role*</label><select class="input" id="uf-role" required>'+allowedRoles.map(r=>'<option value="'+esc(r)+'" '+(u?.role===r?'selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div>'+
+ f('Department','','<input class="input" id="uf-dept" placeholder="e.g. Management, Engineering, Sales" value="'+esc(u?.dept||'')+'">')+
+ f('Phone','','<input class="input" id="uf-phone" type="tel" autocomplete="tel" placeholder="+91…" value="'+esc(u?.phone||'')+'">')+
+ f('Skills (comma separated)','','<input class="input" id="uf-skills" placeholder="Leadership, Strategy" value="'+esc((u?.skills||[]).join(', '))+'">')+
+ f('Joining Date','','<input class="input" id="uf-joined" type="date" value="'+esc(u?.joined||today())+'">')+'</div>'+
+ '<div class="muted" style="font-size:11px;margin-top:10px;line-height:1.5">'+esc(passwordHelp)+' Passwords are stored as secure hashes and are never saved in the dashboard profile.</div>';
+ openModal(u?'Edit Team Member':'Add Team Member',body,'<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveUser(\''+(id||'')+'\')">'+(u?'Save Changes':'Create Account')+'</button>',true);
 }
 
-function saveUser(id){
+async function saveUser(id){
  const g=x=>($('#uf-'+x)?.value||'').trim();
- const allowedRoles=session.user&&session.user.role==='Founder'?STAFF_ROLES:STAFF_ROLES.filter(r=>!['Founder','CEO','Admin'].includes(r));
- if(!g('name')||!g('email')){toast('Name and email required','err');return}
- if(!g('role')||!allowedRoles.includes(g('role'))){toast('You cannot assign Founder, CEO or Admin role','err');return}
- if(id){const existing=db.users.find(x=>x.id===id);if(existing&&['Founder','CEO','Admin'].includes(existing.role)&&session.user?.role!=='Founder'){toast('Only Founder can edit this leadership role','err');return}}
- const duplicate=db.users.find(u=>u.email.toLowerCase()===g('email').toLowerCase()&&u.id!==id);
- if(duplicate){toast('Email already exists','err');return}
- if(id){
-  const u=db.users.find(x=>x.id===id);
-  if(!u){toast('Team member not found','err');return}
-  const oldRole=u.role;
-  u.name=g('name');u.email=g('email');u.role=g('role');u.dept=g('dept')||'—';u.phone=g('phone');u.skills=g('skills').split(',').map(s=>s.trim()).filter(Boolean);u.joined=g('joined')||today();
-  audit(session.user.name,'updated user',u.name,oldRole,u.role);notify('Team member updated: '+u.name,'team');
-  if(session.user&&session.user.id===u.id)session.user={...u};
-  saveDB();localStorage.setItem(SES_KEY,JSON.stringify(session));closeModal();toast('Member updated');render();
- }else{
-  const u={id:uid('u'),name:g('name'),email:g('email'),role:g('role'),dept:g('dept')||'—',phone:g('phone'),skills:g('skills').split(',').map(s=>s.trim()).filter(Boolean),joined:g('joined')||today(),clientId:null};
-  db.users.push(u);
-  audit(session.user.name,'created user',u.name,'',u.role);notify('New team member: '+u.name,'team');saveDB();closeModal();toast('Member added');render();
+ const u=id?db.users.find(x=>x.id===id):null;
+ const hasAccount=!!u&&(u.authId!=null||/^\\d+$/.test(String(u.id||'')));
+ const allowedRoles=session.user&&session.user.role==='Founder'?STAFF_ROLES:STAFF_ROLES.filter(r=>!LEADERSHIP_ROLES.includes(r));
+ const name=g('name'), email=g('email').toLowerCase(), role=g('role'), password=g('password');
+ if(!name||!email){toast('Name and email required','err');return}
+ if(!role||!allowedRoles.includes(role)){toast('You cannot assign that role','err');return}
+ if((!hasAccount||password)&&password.length<14){toast('Password must be at least 14 characters','err');return}
+ if(id&&LEADERSHIP_ROLES.includes(u?.role)&&session.user?.role!=='Founder'){toast('Only Founder can edit this leadership role','err');return}
+ const duplicate=db.users.find(x=>String(x.email||'').toLowerCase()===email&&String(x.id)!==String(id||''));
+ if(duplicate){toast('Email already exists in this workspace','err');return}
+ const primary=$('#modalRoot .modal .btn-primary');
+ if(primary){primary.disabled=true;primary.style.opacity='.65'}
+ let account;
+ try{
+  if(hasAccount){
+   const authId=u.authId!=null?Number(u.authId):Number(u.id);
+   account=await apiRequest('/api/team-members/'+authId,{method:'PUT',body:JSON.stringify({name,email,role,password:password||null})});
+  }else{
+   account=await apiRequest('/api/team-members',{method:'POST',body:JSON.stringify({name,email,role,password})});
+  }
+ }catch(e){
+  if(primary){primary.disabled=false;primary.style.opacity=''}
+  toast(e.message||'Could not save team member account','err');return;
  }
+ const profile={
+  ...(u||{}),
+  id:u?u.id:uid('u'),
+  authId:account.id,
+  name:account.name,
+  email:account.email,
+  role:account.role,
+  dept:g('dept')||'—',
+  phone:g('phone'),
+  skills:g('skills').split(',').map(s=>s.trim()).filter(Boolean),
+  joined:g('joined')||today(),
+  clientId:null
+ };
+ if(id){
+  const oldRole=u.role;
+  Object.assign(u,profile);
+  audit(session.user.name,'updated user',u.name,oldRole,u.role);
+  notify('Team member updated: '+u.name,'team');
+  if(session.user&&String(session.user.id)===String(u.id)){session.user={...u};persistSession();}
+ }else{
+  db.users.push(profile);
+  audit(session.user.name,'created user',profile.name,'',profile.role);
+  notify('New team member: '+profile.name,'team');
+ }
+ saveDB();closeModal();toast(id?'Member updated':'Team member account created');render();
 }
 
-function deleteUser(id){
+async function deleteUser(id){
  const u=db.users.find(x=>x.id===id);
  if(!u){toast('Team member not found','err');return}
- if(session.user&&session.user.id===u.id){toast('You cannot delete the current logged-in account','err');return}
- if(u.role==='Founder'&&session.user?.role!=='Founder'){toast('Only Founder can delete the Founder profile','err');return}
- if(['Founder','CEO','Admin'].includes(u.role)&&session.user?.role!=='Founder'){toast('Only Founder can delete leadership profiles','err');return}
- if(!confirm('Delete '+u.name+' ('+u.role+')?\\n\\nThis team member will be permanently removed from local data.'))return;
- db.users=db.users.filter(x=>x.id!==id);
- audit(session.user?session.user.name:'System','deleted user',u.name,u.role,'Deleted');
- notify('Team member deleted: '+u.name,'team');
- saveDB();toast('Member deleted');render();
+ if(session.user&&String(session.user.id)===String(u.id)){toast('You cannot delete the current logged-in account','err');return}
+ if(LEADERSHIP_ROLES.includes(u.role)&&session.user?.role!=='Founder'){toast('Only Founder can delete leadership profiles','err');return}
+ if(!confirm('Deactivate '+u.name+' ('+u.role+')?\\n\\nTheir sign-in account will be disabled.'))return;
+ const authId=u.authId!=null?Number(u.authId):(/^\\d+$/.test(String(u.id||''))?Number(u.id):null);
+ if(authId){
+  try{await apiRequest('/api/team-members/'+authId,{method:'DELETE'})}
+  catch(e){toast(e.message||'Could not deactivate team member','err');return}
+ }
+ db.users=db.users.filter(x=>String(x.id)!==String(id));
+ audit(session.user?session.user.name:'System','deactivated user',u.name,u.role,'Deactivated');
+ notify('Team member deactivated: '+u.name,'team');
+ saveDB();toast('Team member deactivated');render();
 }
+
 
 // ============ QUOTATIONS ============
 function renderQuotations(){
