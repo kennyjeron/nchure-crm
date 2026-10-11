@@ -614,7 +614,7 @@ return '<div style="display:flex;justify-content:space-between;align-items:cente
 }
 function leadForm(id){
 const l=id?db.leads.find(x=>x.id===id):null;
-const salesUsers=db.users.filter(u=>['Sales Manager','Sales Executive','Admin','Founder'].includes(u.role));
+const salesUsers=db.users.filter(u=>['Founder','CEO','Sales Manager','Sales Executive','Admin'].includes(u.role));
 const allowedRoles=session.user&&session.user.role==='Founder'?STAFF_ROLES:STAFF_ROLES.filter(r=>!['Founder','CEO','Admin'].includes(r));
  if(id&&['Founder','CEO','Admin'].includes(u?.role)&&session.user?.role!=='Founder'){toast('Only Founder can edit this leadership role','err');return}
  const body='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" class="formgrid">'+
