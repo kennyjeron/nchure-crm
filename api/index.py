@@ -8,10 +8,11 @@ from typing import Any
 
 import jwt
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
-from psycopg_pool import ConnectionPool
+from psycopg_pool import ConnectionPool, PoolTimeout
 from psycopg.types.json import Jsonb
 
 app = FastAPI(title="NCHURE CRM API", version="1.1.0")
@@ -25,8 +26,17 @@ app.add_middleware(
 
 DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
 SECRET = os.getenv("JWT_SECRET")
-pool = ConnectionPool(DATABASE_URL, open=False, kwargs={"autocommit": False}) if DATABASE_URL else None
+pool = ConnectionPool(DATABASE_URL, open=False, kwargs={"autocommit": False}, timeout=5, min_size=0, max_size=2, max_waiting=4) if DATABASE_URL else None
 security = HTTPBearer(auto_error=False)
+
+
+@app.exception_handler(PoolTimeout)
+async def handle_database_pool_timeout(request, exc):
+    # Return an actionable API error instead of Vercel's generic function crash.
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database connection timed out. Check DATABASE_URL and use the Supabase Transaction Pooler URI."},
+    )
 
 MAP = {
     "clients": ["company", "contact", "email", "phone", "status"],
@@ -96,22 +106,12 @@ class ChangePassword(BaseModel):
 
 @app.on_event("startup")
 def startup():
+    # Do not block FastAPI startup on a database round-trip. On serverless hosts,
+    # a database outage or wrong DATABASE_URL must not turn every route into a 500.
+    # Existing founder users are managed in the database; bootstrap is not run on
+    # every cold start to avoid lockups and duplicate account races.
     if pool:
         pool.open()
-        # Optional first account bootstrap. No hard-coded/default credentials are shipped.
-        email = os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower()
-        password = os.getenv("INITIAL_ADMIN_PASSWORD", "")
-        name = os.getenv("INITIAL_ADMIN_NAME", "NCHURE Founder").strip() or "NCHURE Founder"
-        if email and password:
-            if len(password) < 14:
-                raise RuntimeError("INITIAL_ADMIN_PASSWORD must be at least 14 characters.")
-            with pool.connection() as conn:
-                existing = conn.execute("SELECT id FROM public.crm_users WHERE lower(email)=lower(%s)", (email,)).fetchone()
-                if not existing:
-                    conn.execute(
-                        "INSERT INTO public.crm_users(name,email,password_hash,role) VALUES (%s,%s,%s,'Founder')",
-                        (name, email, hashpw(password)),
-                    )
 
 
 @app.get("/health")
