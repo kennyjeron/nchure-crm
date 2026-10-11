@@ -1,6 +1,7 @@
 import os
 import hashlib
 import hmac
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -11,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from psycopg_pool import ConnectionPool
+from psycopg.types.json import Jsonb
 
 app = FastAPI(title="NCHURE CRM API", version="1.1.0")
 app.add_middleware(
@@ -87,6 +89,11 @@ class Login(BaseModel):
     password: str
 
 
+class ChangePassword(BaseModel):
+    current_password: str
+    new_password: str
+
+
 @app.on_event("startup")
 def startup():
     if pool:
@@ -149,6 +156,65 @@ def me(user=Depends(current)):
     if not row or not row[4]:
         raise HTTPException(401, "User not found or disabled")
     return {"id": row[0], "name": row[1], "email": row[2], "role": row[3]}
+
+
+@app.post("/api/auth/change-password")
+def change_password(body: ChangePassword, user=Depends(current)):
+    if len(body.new_password) < 14:
+        raise HTTPException(400, "New password must be at least 14 characters.")
+    with db() as conn:
+        row = conn.execute(
+            "SELECT password_hash FROM public.crm_users WHERE id=%s AND is_active=true",
+            (user["sub"],),
+        ).fetchone()
+        if not row or not verify(row[0], body.current_password):
+            raise HTTPException(400, "Current password is incorrect.")
+        conn.execute(
+            "UPDATE public.crm_users SET password_hash=%s WHERE id=%s",
+            (hashpw(body.new_password), user["sub"]),
+        )
+    return {"ok": True}
+
+
+@app.get("/api/app-state")
+def get_app_state(user=Depends(current)):
+    with db() as conn:
+        row = conn.execute(
+            "SELECT state, updated_at FROM public.crm_dashboard_state WHERE id=1"
+        ).fetchone()
+    return {"state": row[0] if row else None, "updated_at": row[1].isoformat() if row else None}
+
+
+@app.put("/api/app-state")
+def put_app_state(body: dict[str, Any], user=Depends(current)):
+    if user.get("role") not in {"Founder", "CEO", "Admin", "Team Leader"}:
+        raise HTTPException(403, "Only authorized workspace managers may save workspace state.")
+    try:
+        encoded = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Invalid workspace state.")
+    if len(encoded.encode("utf-8")) > 2_000_000:
+        raise HTTPException(413, "Workspace state exceeds the 2 MB limit.")
+    state_value = json.loads(encoded)
+    if not isinstance(state_value, dict):
+        raise HTTPException(400, "Workspace state must be an object.")
+    # Authentication secrets never belong in the dashboard snapshot.
+    if isinstance(state_value.get("users"), list):
+        for member in state_value["users"]:
+            if isinstance(member, dict):
+                for secret_key in ("pass", "password", "password_hash", "token", "access_token"):
+                    member.pop(secret_key, None)
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO public.crm_dashboard_state (id, state, updated_by, updated_at)
+            VALUES (1, %s, %s, now())
+            ON CONFLICT (id) DO UPDATE
+            SET state=EXCLUDED.state, updated_by=EXCLUDED.updated_by, updated_at=now()
+            """,
+            (Jsonb(state_value), user["sub"]),
+        )
+    return {"ok": True}
 
 
 @app.get("/api/state")
