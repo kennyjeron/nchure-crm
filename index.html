@@ -1001,7 +1001,7 @@ function renderTeam(){
 function userForm(id){
  const u=id?db.users.find(x=>x.id===id):null;
  if(id&&!u){toast('Team member not found','err');return}
- const hasAccount=!!u&&(u.authId!=null||/^\\d+$/.test(String(u.id||'')));
+ const hasAccount=!!u&&(u.authId!=null||/^\d+$/.test(String(u.id||'')));
  const allowedRoles=session.user&&session.user.role==='Founder'?STAFF_ROLES:STAFF_ROLES.filter(r=>!LEADERSHIP_ROLES.includes(r));
  if(id&&LEADERSHIP_ROLES.includes(u?.role)&&session.user?.role!=='Founder'){toast('Only Founder can edit this leadership role','err');return}
  const passwordLabel=hasAccount?'New Password (optional)':'Password*';
@@ -1022,7 +1022,7 @@ function userForm(id){
 async function saveUser(id){
  const g=x=>($('#uf-'+x)?.value||'').trim();
  const u=id?db.users.find(x=>x.id===id):null;
- const hasAccount=!!u&&(u.authId!=null||/^\\d+$/.test(String(u.id||'')));
+ const hasAccount=!!u&&(u.authId!=null||/^\d+$/.test(String(u.id||'')));
  const allowedRoles=session.user&&session.user.role==='Founder'?STAFF_ROLES:STAFF_ROLES.filter(r=>!LEADERSHIP_ROLES.includes(r));
  const name=g('name'), email=g('email').toLowerCase(), role=g('role'), password=g('password');
  if(!name||!email){toast('Name and email required','err');return}
@@ -1078,7 +1078,7 @@ async function deleteUser(id){
  if(session.user&&String(session.user.id)===String(u.id)){toast('You cannot delete the current logged-in account','err');return}
  if(LEADERSHIP_ROLES.includes(u.role)&&session.user?.role!=='Founder'){toast('Only Founder can delete leadership profiles','err');return}
  if(!confirm('Deactivate '+u.name+' ('+u.role+')?\\n\\nTheir sign-in account will be disabled.'))return;
- const authId=u.authId!=null?Number(u.authId):(/^\\d+$/.test(String(u.id||''))?Number(u.id):null);
+ const authId=u.authId!=null?Number(u.authId):(/^\d+$/.test(String(u.id||''))?Number(u.id):null);
  if(authId){
   try{await apiRequest('/api/team-members/'+authId,{method:'DELETE'})}
   catch(e){toast(e.message||'Could not deactivate team member','err');return}
