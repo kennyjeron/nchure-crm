@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
-from psycopg_pool import ConnectionPool, PoolTimeout
+from psycopg_pool import ConnectionPool, PoolTimeout, TooManyRequests
 from psycopg.types.json import Jsonb
 
 app = FastAPI(title="NCHURE CRM API", version="1.1.0")
@@ -31,11 +31,12 @@ security = HTTPBearer(auto_error=False)
 
 
 @app.exception_handler(PoolTimeout)
+@app.exception_handler(TooManyRequests)
 async def handle_database_pool_timeout(request, exc):
     # Return an actionable API error instead of Vercel's generic function crash.
     return JSONResponse(
         status_code=503,
-        content={"detail": "Database connection timed out. Check DATABASE_URL and use the Supabase Transaction Pooler URI."},
+        content={"detail": "Database is not reachable or the connection pool is busy. Check DATABASE_URL in Vercel and use the Supabase Transaction Pooler URI."},
     )
 
 MAP = {
@@ -117,14 +118,22 @@ def startup():
 @app.get("/health")
 def health():
     database_ok = False
+    database_error = None
     if pool:
         try:
             with pool.connection() as conn:
                 conn.execute("SELECT 1")
             database_ok = True
-        except Exception:
-            database_ok = False
-    return {"ok": True, "service": "nchure-crm-api", "database_configured": bool(DATABASE_URL), "database_connected": database_ok}
+        except Exception as exc:
+            # Expose only the exception class, never DSN, host credentials, or secrets.
+            database_error = type(exc).__name__
+    return {
+        "ok": True,
+        "service": "nchure-crm-api",
+        "database_configured": bool(DATABASE_URL),
+        "database_connected": database_ok,
+        "database_error": database_error,
+    }
 
 
 @app.post("/api/auth/login")
