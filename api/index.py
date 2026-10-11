@@ -178,6 +178,8 @@ def change_password(body: ChangePassword, user=Depends(current)):
 
 @app.get("/api/app-state")
 def get_app_state(user=Depends(current)):
+    if user.get("role") not in {"Founder", "CEO", "Admin", "Team Leader"}:
+        raise HTTPException(403, "Only authorized workspace managers may read workspace state.")
     with db() as conn:
         row = conn.execute(
             "SELECT state, updated_at FROM public.crm_dashboard_state WHERE id=1"
