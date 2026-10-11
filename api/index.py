@@ -219,8 +219,8 @@ def create_team_member(body: TeamMemberCreate, user=Depends(current)):
         raise HTTPException(400, "Name is required.")
     if role not in TEAM_ROLES:
         raise HTTPException(400, "Select a valid team role.")
-    if user.get("role") != "Founder" and role in ELEVATED_TEAM_ROLES:
-        raise HTTPException(403, "Only Founder can assign leadership roles.")
+    if user.get("role") != "Founder" and role == "Founder":
+        raise HTTPException(403, "Only Founder can assign the Founder role.")
     if len(body.password) < 14:
         raise HTTPException(400, "Password must be at least 14 characters.")
     with db() as conn:
@@ -256,10 +256,12 @@ def update_team_member(member_id: int, body: TeamMemberUpdate, user=Depends(curr
         ).fetchone()
         if not existing:
             raise HTTPException(404, "Team account not found.")
-        if user.get("role") != "Founder" and (
-            existing[1] in ELEVATED_TEAM_ROLES or role in ELEVATED_TEAM_ROLES
-        ):
-            raise HTTPException(403, "Only Founder can edit leadership accounts.")
+        if user.get("role") != "Founder" and existing[1] == "Founder":
+            raise HTTPException(403, "Only Founder can edit the Founder account.")
+        if member_id == int(user.get("sub")) and role != existing[1]:
+            raise HTTPException(400, "You cannot change your own role.")
+        if member_id == int(user.get("sub")) and user.get("role") == "CEO" and body.password:
+            raise HTTPException(403, "CEO cannot change their own password from Edit Profile.")
         duplicate = conn.execute(
             "SELECT id FROM public.crm_users WHERE lower(email)=lower(%s) AND id<>%s",
             (email, member_id),
@@ -296,8 +298,8 @@ def deactivate_team_member(member_id: int, user=Depends(current)):
         ).fetchone()
         if not existing:
             raise HTTPException(404, "Team account not found.")
-        if user.get("role") != "Founder" and existing[0] in ELEVATED_TEAM_ROLES:
-            raise HTTPException(403, "Only Founder can deactivate leadership accounts.")
+        if user.get("role") != "Founder" and existing[0] == "Founder":
+            raise HTTPException(403, "Only Founder can deactivate the Founder account.")
         conn.execute(
             "UPDATE public.crm_users SET is_active=false WHERE id=%s",
             (member_id,),
