@@ -105,6 +105,29 @@ class ChangePassword(BaseModel):
     new_password: str
 
 
+class TeamMemberCreate(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    role: str
+
+
+class TeamMemberUpdate(BaseModel):
+    name: str
+    email: EmailStr
+    role: str
+    password: str | None = None
+
+
+TEAM_ROLES = {
+    "Founder", "CEO", "CTO", "COO", "Admin", "Team Leader",
+    "Sales Manager", "Sales Executive", "Project Manager", "Developer",
+    "Designer", "Content Team", "Accountant", "Support Executive", "Staff",
+}
+ELEVATED_TEAM_ROLES = {"Founder", "CEO", "CTO", "COO", "Admin", "Team Leader"}
+TEAM_MANAGERS = {"Founder", "CEO", "Admin"}
+
+
 @app.on_event("startup")
 def startup():
     # Do not block FastAPI startup on a database round-trip. On serverless hosts,
@@ -183,6 +206,103 @@ def change_password(body: ChangePassword, user=Depends(current)):
             (hashpw(body.new_password), user["sub"]),
         )
     return {"ok": True}
+
+
+@app.post("/api/team-members")
+def create_team_member(body: TeamMemberCreate, user=Depends(current)):
+    if user.get("role") not in TEAM_MANAGERS:
+        raise HTTPException(403, "Only Founder, CEO or Admin can manage team members.")
+    name = body.name.strip()
+    email = str(body.email).strip().lower()
+    role = body.role.strip()
+    if not name:
+        raise HTTPException(400, "Name is required.")
+    if role not in TEAM_ROLES:
+        raise HTTPException(400, "Select a valid team role.")
+    if user.get("role") != "Founder" and role in ELEVATED_TEAM_ROLES:
+        raise HTTPException(403, "Only Founder can assign leadership roles.")
+    if len(body.password) < 14:
+        raise HTTPException(400, "Password must be at least 14 characters.")
+    with db() as conn:
+        duplicate = conn.execute(
+            "SELECT id FROM public.crm_users WHERE lower(email)=lower(%s)",
+            (email,),
+        ).fetchone()
+        if duplicate:
+            raise HTTPException(409, "An account with this email already exists.")
+        row = conn.execute(
+            "INSERT INTO public.crm_users(name,email,password_hash,role,is_active) "
+            "VALUES (%s,%s,%s,%s,true) RETURNING id,name,email,role,is_active",
+            (name, email, hashpw(body.password), role),
+        ).fetchone()
+    return {"id": row[0], "name": row[1], "email": row[2], "role": row[3], "is_active": row[4]}
+
+
+@app.put("/api/team-members/{member_id}")
+def update_team_member(member_id: int, body: TeamMemberUpdate, user=Depends(current)):
+    if user.get("role") not in TEAM_MANAGERS:
+        raise HTTPException(403, "Only Founder, CEO or Admin can manage team members.")
+    name = body.name.strip()
+    email = str(body.email).strip().lower()
+    role = body.role.strip()
+    if not name:
+        raise HTTPException(400, "Name is required.")
+    if role not in TEAM_ROLES:
+        raise HTTPException(400, "Select a valid team role.")
+    with db() as conn:
+        existing = conn.execute(
+            "SELECT id,role FROM public.crm_users WHERE id=%s AND is_active=true",
+            (member_id,),
+        ).fetchone()
+        if not existing:
+            raise HTTPException(404, "Team account not found.")
+        if user.get("role") != "Founder" and (
+            existing[1] in ELEVATED_TEAM_ROLES or role in ELEVATED_TEAM_ROLES
+        ):
+            raise HTTPException(403, "Only Founder can edit leadership accounts.")
+        duplicate = conn.execute(
+            "SELECT id FROM public.crm_users WHERE lower(email)=lower(%s) AND id<>%s",
+            (email, member_id),
+        ).fetchone()
+        if duplicate:
+            raise HTTPException(409, "An account with this email already exists.")
+        if body.password:
+            if len(body.password) < 14:
+                raise HTTPException(400, "New password must be at least 14 characters.")
+            row = conn.execute(
+                "UPDATE public.crm_users SET name=%s,email=%s,role=%s,password_hash=%s "
+                "WHERE id=%s RETURNING id,name,email,role,is_active",
+                (name, email, role, hashpw(body.password), member_id),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "UPDATE public.crm_users SET name=%s,email=%s,role=%s "
+                "WHERE id=%s RETURNING id,name,email,role,is_active",
+                (name, email, role, member_id),
+            ).fetchone()
+    return {"id": row[0], "name": row[1], "email": row[2], "role": row[3], "is_active": row[4]}
+
+
+@app.delete("/api/team-members/{member_id}")
+def deactivate_team_member(member_id: int, user=Depends(current)):
+    if user.get("role") not in TEAM_MANAGERS:
+        raise HTTPException(403, "Only Founder, CEO or Admin can manage team members.")
+    if str(member_id) == str(user.get("sub")):
+        raise HTTPException(400, "You cannot deactivate the account you are currently using.")
+    with db() as conn:
+        existing = conn.execute(
+            "SELECT role FROM public.crm_users WHERE id=%s AND is_active=true",
+            (member_id,),
+        ).fetchone()
+        if not existing:
+            raise HTTPException(404, "Team account not found.")
+        if user.get("role") != "Founder" and existing[0] in ELEVATED_TEAM_ROLES:
+            raise HTTPException(403, "Only Founder can deactivate leadership accounts.")
+        conn.execute(
+            "UPDATE public.crm_users SET is_active=false WHERE id=%s",
+            (member_id,),
+        )
+    return {"ok": True, "id": member_id, "is_active": False}
 
 
 @app.get("/api/app-state")
