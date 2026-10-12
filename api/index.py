@@ -167,7 +167,7 @@ TEAM_ROLES = {
     "Security Team Lead", "Security Analyst", "Team Leader", "Intern", "Staff",
 }
 ELEVATED_TEAM_ROLES = {"Founder", "CEO", "CTO", "COO", "Admin", "Team Leader"}
-TEAM_MANAGERS = {"Founder", "CEO", "Admin"}
+TEAM_MANAGERS = {"Founder", "CEO", "Admin", "CTO", "COO", "Team Leader"}
 
 SALES_DATA_ROLES = {
     "CRO", "VP of Sales", "Sales Manager", "Sales Team Lead", "Senior Sales Executive",
@@ -301,6 +301,8 @@ def create_team_member(body: TeamMemberCreate, user=Depends(current)):
         raise HTTPException(400, "Select a valid team role.")
     if user.get("role") != "Founder" and role == "Founder":
         raise HTTPException(403, "Only Founder can assign the Founder role.")
+    if user.get("role") == "CEO" and role in {"Founder"}:
+        raise HTTPException(403, "CEO cannot assign the Founder role.")
     if len(body.password) < 14:
         raise HTTPException(400, "Password must be at least 14 characters.")
     with db() as conn:
@@ -347,6 +349,8 @@ def update_team_member(member_id: int, body: TeamMemberUpdate, user=Depends(curr
             raise HTTPException(404, "Team account not found.")
         if user.get("role") != "Founder" and existing[1] == "Founder":
             raise HTTPException(403, "Only Founder can edit the Founder account.")
+        if user.get("role") != "Founder" and role == "Founder" and existing[1] != "Founder":
+            raise HTTPException(403, "Only Founder can assign the Founder role.")
         if member_id == int(user.get("sub")) and role != existing[1]:
             raise HTTPException(400, "You cannot change your own role.")
         if member_id == int(user.get("sub")) and user.get("role") == "CEO" and body.password:
