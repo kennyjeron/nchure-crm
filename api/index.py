@@ -26,7 +26,7 @@ app.add_middleware(
 
 DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
 SECRET = os.getenv("JWT_SECRET")
-pool = ConnectionPool(DATABASE_URL, open=False, kwargs={"autocommit": False}, timeout=5, min_size=0, max_size=2, max_waiting=4) if DATABASE_URL else None
+pool = ConnectionPool(DATABASE_URL, open=False, kwargs={"autocommit": False, "prepare_threshold": None}, timeout=5, min_size=0, max_size=2, max_waiting=4) if DATABASE_URL else None
 security = HTTPBearer(auto_error=False)
 
 
@@ -540,6 +540,7 @@ def _worker_state(state, user):
         str(_id_of(row, "clientId", "client_id")) for row in projects
         if _id_of(row, "clientId", "client_id") is not None
     }
+    meeting_client_ids = set(client_ids)
     clients = [
         row for row in _as_list(state.get("clients"))
         if isinstance(row, dict) and str(_id_of(row, "id")) in client_ids
@@ -579,6 +580,7 @@ def _worker_state(state, user):
         client_id = _id_of(row, "clientId", "client_id")
         if client_id is not None:
             client_ids.add(str(client_id))
+            meeting_client_ids.add(str(client_id))
     # Sales and finance teams need the client selector even before their first
     # quotation or invoice exists; access remains limited to these departments.
     if role in SALES_DATA_ROLES or role in FINANCE_DATA_ROLES:
@@ -618,7 +620,7 @@ def _worker_state(state, user):
         row for row in _as_list(state.get("meetings")) if isinstance(row, dict) and (
             _record_has_identity(row, user)
             or str(_id_of(row, "projectId", "project_id")) in project_ids
-            or str(_id_of(row, "clientId", "client_id")) in client_ids
+            or str(_id_of(row, "clientId", "client_id")) in meeting_client_ids
         )
     ]
     messages = [
