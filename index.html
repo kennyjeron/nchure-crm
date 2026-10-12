@@ -393,6 +393,9 @@ ai:['Founder','CEO','Admin','Project Manager','Sales Manager','Accountant'],
 settings:['Founder','CEO','Admin']
 };
 const FULL_WORKSPACE_ROLES=new Set(['Founder','CEO','CTO','COO','Admin','Team Leader']);
+function isFounder(){return session.user?.role==='Founder'}
+function isCEO(){return session.user?.role==='CEO'}
+function canManageUserProfile(target){if(isFounder())return true;if(isCEO())return target?.role!=='Founder'&&!(String(target?.authId??target?.id)===String(session.user?.id)&&target?.role==='CEO');return false;}
 const WORKER_ROLES=new Set(ROLES.filter(r=>r!=='Client'&&!FULL_WORKSPACE_ROLES.has(r)));
 const WORKER_NAV_MODS=new Set(['dashboard','projects','tasks','calendar','messages','meetings','activity','tickets','documents','ai']);
 const TEAM_LEADER_NAV_MODS=new Set(['dashboard','clients','projects','tasks','calendar','messages','meetings','activity','tickets','documents','ai','analytics']);
@@ -1304,15 +1307,16 @@ function userForm(id){
  const hasAccount=!!u&&(u.authId!=null||/^\d+$/.test(String(u.id||'')));
  const isSelf=!!u&&String(u.authId!=null?u.authId:u.id)===String(session.user?.id);
  const hideOwnPassword=isSelf&&session.user?.role==='CEO';
+ const protectFounder=u?.role==='Founder'&&!isFounder();
  const allowedRoles=session.user&&session.user.role==='Founder'?STAFF_ROLES:STAFF_ROLES.filter(r=>r!=='Founder');
- if(id&&u?.role==='Founder'&&session.user?.role!=='Founder'){toast('Only Founder can edit the Founder profile','err');return}
+ if(id&&!canManageUserProfile(u)){toast('You do not have permission to edit this profile','err');return}
  const defaultRole=u?.role||(allowedRoles.includes('Staff')?'Staff':allowedRoles[0]);
  const passwordLabel=hasAccount?'New Password (optional)':'Password*';
  const passwordHelp=hideOwnPassword?'Password changes are disabled from your own CEO profile.':(hasAccount?'Leave blank to keep the current password.':'Initial sign-in password; use at least 14 characters.');
  const body='<input type="hidden" id="uf-edit-id" value="'+esc(u?.id||'')+'"><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" class="formgrid">'+
- f('Name*','','<input class="input" id="uf-name" autocomplete="name" required value="'+esc(u?.name||'')+'">')+
- f('Email*','','<input class="input" id="uf-email" type="email" autocomplete="email" required value="'+esc(u?.email||'')+'">')+
- (hideOwnPassword?'':f(passwordLabel,'','<input class="input" id="uf-password" type="password" autocomplete="new-password" '+(!hasAccount?'required':'')+' minlength="14" placeholder="'+(hasAccount?'Leave blank to keep current password':'Minimum 14 characters')+'">'))+
+ f('Name*','','<input class="input" id="uf-name" autocomplete="name" required '+(protectFounder?'disabled ':'')+'value="'+esc(u?.name||'')+'">')+
+ f('Email*','','<input class="input" id="uf-email" type="email" autocomplete="email" required '+(protectFounder?'disabled ':'')+'value="'+esc(u?.email||'')+'">')+
+ (hideOwnPassword||protectFounder?'':f(passwordLabel,'','<input class="input" id="uf-password" type="password" autocomplete="new-password" '+(!hasAccount?'required':'')+' minlength="14" placeholder="'+(hasAccount?'Leave blank to keep current password':'Minimum 14 characters')+'">'))+
  '<div><label class="muted" style="font-size:11px;font-weight:600">Role*</label><select class="input" id="uf-role" required '+(isSelf?'disabled':'')+' onchange="syncRoleOrgFields()">'+roleOptionsHtml(allowedRoles,defaultRole)+'</select></div>'+
  '<div><label class="muted" style="font-size:11px;font-weight:600">Department</label><input class="input" id="uf-dept" readonly value="'+esc(u?.dept||roleDepartment(defaultRole))+'"></div>'+
  '<div><label class="muted" style="font-size:11px;font-weight:600">Reports To</label><select class="input" id="uf-reports-to">'+reportingOptionsHtml(defaultRole,u?.id,u?.reportsTo)+'</select><div class="muted" style="font-size:10.5px;margin-top:4px">Optional. You can assign or change the reporting manager later.</div></div>'+
@@ -1331,8 +1335,11 @@ async function saveUser(id){
  const name=g('name'), email=g('email').toLowerCase(), role=g('role'), password=g('password');
  if(!name||!email){toast('Name and email required','err');return}
  if(!role||!allowedRoles.includes(role)){toast('You cannot assign that role','err');return}
+ if(isCEO()&&role==='Founder'){toast('CEO cannot create or assign a Founder account','err');return}
  if((!hasAccount||password)&&password.length<14){toast('Password must be at least 14 characters','err');return}
  if(id&&u?.role==='Founder'&&session.user?.role!=='Founder'){toast('Only Founder can edit the Founder profile','err');return}
+ if(id&&u?.role==='Founder'&&!isFounder()){toast('CEO and other roles cannot edit the Founder profile','err');return}
+ if(isCEO()&&isSelf){toast('CEO cannot change their own account or password from team management','err');return}
  const reportingId=g('reports-to');
  const reportingCandidate=reportingId?db.users.find(x=>String(x.id)===String(reportingId)):null;
  // Reporting lines are optional. Ignore stale or mismatched selections instead
