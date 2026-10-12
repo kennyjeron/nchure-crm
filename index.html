@@ -161,6 +161,12 @@ const ROLE_DEPARTMENT_OVERRIDES={
  'Executive Assistant':'Executive & Governance','Team Leader':'General Roles'
 };
 function roleDepartment(role){return ROLE_DEPARTMENT_OVERRIDES[role]||ROLE_DEPARTMENTS[role]||'General Roles';}
+function roleOptionsHtml(allowedRoles,selectedRole){
+ return Object.entries(ROLE_GROUPS).map(([department,roles])=>{
+  const available=roles.filter(role=>allowedRoles.includes(role));
+  return available.length?'<optgroup label="'+esc(department)+'">'+available.map(role=>'<option value="'+esc(role)+'" '+(role===selectedRole?'selected':'')+'>'+esc(role)+'</option>').join('')+'</optgroup>':'';
+ }).join('');
+}
 const ROLE_HIERARCHY={
  'Engineering & Data':{executive:['CTO','COO','CEO'],vp:'VP of Engineering',manager:'Engineering Manager',lead:'Engineering Team Lead',senior:'Principal Engineer'},
  'Product & Design':{executive:['CPO','COO','CEO'],vp:'VP of Product',manager:'Product Manager',lead:'Product Team Lead',senior:'Senior Designer'},
@@ -1307,7 +1313,7 @@ function userForm(id){
  f('Name*','','<input class="input" id="uf-name" autocomplete="name" required value="'+esc(u?.name||'')+'">')+
  f('Email*','','<input class="input" id="uf-email" type="email" autocomplete="email" required value="'+esc(u?.email||'')+'">')+
  (hideOwnPassword?'':f(passwordLabel,'','<input class="input" id="uf-password" type="password" autocomplete="new-password" '+(!hasAccount?'required':'')+' minlength="14" placeholder="'+(hasAccount?'Leave blank to keep current password':'Minimum 14 characters')+'">'))+
- '<div><label class="muted" style="font-size:11px;font-weight:600">Role*</label><select class="input" id="uf-role" required '+(isSelf?'disabled':'')+' onchange="syncRoleOrgFields()">'+allowedRoles.map(r=>'<option value="'+esc(r)+'" '+(defaultRole===r?'selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div>'+
+ '<div><label class="muted" style="font-size:11px;font-weight:600">Role*</label><select class="input" id="uf-role" required '+(isSelf?'disabled':'')+' onchange="syncRoleOrgFields()">'+roleOptionsHtml(allowedRoles,defaultRole)+'</select></div>'+
  '<div><label class="muted" style="font-size:11px;font-weight:600">Department</label><input class="input" id="uf-dept" readonly value="'+esc(u?.dept||roleDepartment(defaultRole))+'"></div>'+
  '<div><label class="muted" style="font-size:11px;font-weight:600">Reports To</label><select class="input" id="uf-reports-to">'+reportingOptionsHtml(defaultRole,u?.id,u?.reportsTo)+'</select><div class="muted" style="font-size:10.5px;margin-top:4px">Select the direct manager or team lead for this role.</div></div>'+
  f('Phone','','<input class="input" id="uf-phone" type="tel" autocomplete="tel" placeholder="+91…" value="'+esc(u?.phone||'')+'">')+
