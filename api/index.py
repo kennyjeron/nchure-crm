@@ -162,11 +162,35 @@ TEAM_ROLES = {
     "Payroll Specialist", "Legal & Compliance Manager", "Legal Executive", "Compliance Analyst",
     "Customer Success Manager", "Customer Success Team Lead", "Customer Success Executive", "Support Manager",
     "Support Team Lead", "Senior Support Executive", "Support Executive", "Technical Support Engineer",
+    "Developer", "Designer", "Content Team",
     "IT Manager", "IT Team Lead", "System Administrator", "IT Support Engineer", "Security Manager",
     "Security Team Lead", "Security Analyst", "Team Leader", "Intern", "Staff",
 }
 ELEVATED_TEAM_ROLES = {"Founder", "CEO", "CTO", "COO", "Admin", "Team Leader"}
 TEAM_MANAGERS = {"Founder", "CEO", "Admin"}
+
+SALES_DATA_ROLES = {
+    "CRO", "VP of Sales", "Sales Manager", "Sales Team Lead", "Senior Sales Executive",
+    "Sales Executive", "Sales Development Representative", "Business Development Executive",
+    "Account Executive", "Account Manager", "Sales Operations Specialist", "CMO",
+    "Marketing Manager", "Marketing Team Lead", "SEO Specialist", "Performance Marketing Specialist",
+    "Social Media Executive", "Content Strategist", "Senior Content Writer", "Content Writer",
+    "Video Editor", "Creative Producer", "Marketing Analyst",
+}
+SALES_LEAD_MANAGER_ROLES = {
+    "CRO", "VP of Sales", "Sales Manager", "Sales Team Lead", "CMO",
+    "Marketing Manager", "Marketing Team Lead",
+}
+SALES_QUOTATION_ROLES = {
+    "CRO", "VP of Sales", "Sales Manager", "Sales Team Lead", "Senior Sales Executive",
+    "Sales Executive", "Sales Development Representative", "Business Development Executive",
+    "Account Executive", "Account Manager", "Sales Operations Specialist",
+}
+FINANCE_DATA_ROLES = {
+    "CFO", "Finance Manager", "Finance Team Lead", "Senior Accountant", "Accountant",
+    "Finance Analyst", "Payroll Specialist", "Legal & Compliance Manager", "Legal Executive",
+    "Compliance Analyst",
+}
 
 
 @app.on_event("startup")
@@ -503,6 +527,7 @@ def _project_ids_for_user(state, user):
 
 def _worker_state(state, user):
     profile = _safe_profile(_profile_for_state(state, user), user)
+    role = str(user.get("role") or "")
     project_ids = _project_ids_for_user(state, user)
     tasks = [row for row in _as_list(state.get("tasks")) if _task_assigned_to_user(row, user)]
     projects = [
@@ -519,9 +544,52 @@ def _worker_state(state, user):
         row for row in _as_list(state.get("clients"))
         if isinstance(row, dict) and str(_id_of(row, "id")) in client_ids
     ]
-    # Support staff need the support queue; other employees only see tickets
-    # assigned to them or attached to one of their projects.
-    if user.get("role") == "Support Executive":
+
+    # Sales and marketing staff only see their assigned leads; team leads and
+    # managers see the department queue. Commercial roles can access quotations.
+    if role in SALES_DATA_ROLES:
+        if role in SALES_LEAD_MANAGER_ROLES:
+            leads = [row for row in _as_list(state.get("leads")) if isinstance(row, dict)]
+        else:
+            leads = [
+                row for row in _as_list(state.get("leads")) if isinstance(row, dict)
+                and _matches(row.get("assignedTo"), [user.get("name"), user.get("email")])
+            ]
+    else:
+        leads = []
+    quotations = (
+        [row for row in _as_list(state.get("quotations")) if isinstance(row, dict)]
+        if role in SALES_QUOTATION_ROLES else []
+    )
+    invoices = (
+        [row for row in _as_list(state.get("invoices")) if isinstance(row, dict)]
+        if role in FINANCE_DATA_ROLES else []
+    )
+    payments = (
+        [row for row in _as_list(state.get("payments")) if isinstance(row, dict)]
+        if role in FINANCE_DATA_ROLES else []
+    )
+    expenses = (
+        [row for row in _as_list(state.get("expenses")) if isinstance(row, dict)]
+        if role in FINANCE_DATA_ROLES else []
+    )
+
+    for row in leads:
+        # Some leads can reference a previously-created client by id.
+        client_id = _id_of(row, "clientId", "client_id")
+        if client_id is not None:
+            client_ids.add(str(client_id))
+    for row in quotations + invoices + payments + expenses:
+        client_id = _id_of(row, "clientId", "client_id")
+        if client_id is not None:
+            client_ids.add(str(client_id))
+    clients = [
+        row for row in _as_list(state.get("clients")) if isinstance(row, dict)
+        and str(_id_of(row, "id")) in client_ids
+    ]
+
+    # Support executives see the support queue, but not financial or CRM records.
+    if role in {"Support Executive", "Senior Support Executive", "Support Team Lead", "Support Manager"}:
         tickets = [row for row in _as_list(state.get("tickets")) if isinstance(row, dict)]
         ticket_client_ids = {
             str(_id_of(row, "clientId", "client_id")) for row in tickets
@@ -529,8 +597,8 @@ def _worker_state(state, user):
         }
         client_ids.update(ticket_client_ids)
         clients = [
-            row for row in _as_list(state.get("clients"))
-            if isinstance(row, dict) and str(_id_of(row, "id")) in client_ids
+            row for row in _as_list(state.get("clients")) if isinstance(row, dict)
+            and str(_id_of(row, "id")) in client_ids
         ]
     else:
         tickets = [
@@ -580,6 +648,11 @@ def _worker_state(state, user):
         "settings": _safe_settings(state),
         "users": [profile],
         "clients": clients,
+        "leads": leads,
+        "quotations": quotations,
+        "invoices": invoices,
+        "payments": payments,
+        "expenses": expenses,
         "projects": projects,
         "milestones": milestones,
         "tasks": tasks,
@@ -591,7 +664,6 @@ def _worker_state(state, user):
         "aiChats": ai_chats,
         "notifications": notifications,
     }
-
 
 def _client_state(state, user):
     profile = _profile_for_state(state, user)
@@ -711,6 +783,18 @@ def _owned_merge(existing, incoming, is_owner, create_allowed=False, update_fiel
     return rows
 
 
+def _owned_sync(existing, incoming, is_owner, create_allowed=False, update_fields=None):
+    # Synchronize only rows this role owns; rows outside its scope are preserved.
+    existing_rows = [dict(row) for row in _as_list(existing) if isinstance(row, dict)]
+    incoming_rows = [dict(row) for row in _as_list(incoming) if isinstance(row, dict)]
+    incoming_ids = {str(row.get("id")) for row in incoming_rows if row.get("id") is not None}
+    retained = [
+        row for row in existing_rows
+        if not is_owner(row) or (row.get("id") is not None and str(row.get("id")) in incoming_ids)
+    ]
+    return _owned_merge(retained, incoming_rows, is_owner, create_allowed, update_fields)
+
+
 def _read_full_state(conn):
     row = conn.execute("SELECT state FROM public.crm_dashboard_state WHERE id=1").fetchone()
     value = row[0] if row else {}
@@ -755,6 +839,23 @@ def _merge_limited_state(full_state, incoming, user):
                 ["status", "feedback", "version", "uploadedAt", "clientFeedback"]
             )
         return state
+
+    role = str(user.get("role") or "")
+    if role in SALES_DATA_ROLES:
+        if role in SALES_LEAD_MANAGER_ROLES:
+            owns_lead = lambda row: isinstance(row, dict)
+        else:
+            owns_lead = lambda row: _matches(row.get("assignedTo"), [user.get("name"), user.get("email")])
+        if "leads" in incoming:
+            state["leads"] = _owned_sync(state.get("leads"), incoming.get("leads"), owns_lead, True)
+        if role in SALES_QUOTATION_ROLES and "quotations" in incoming:
+            state["quotations"] = _owned_sync(state.get("quotations"), incoming.get("quotations"), lambda row: True, True)
+    if role in FINANCE_DATA_ROLES:
+        for finance_key in ("invoices", "payments", "expenses"):
+            if finance_key in incoming:
+                state[finance_key] = _owned_sync(
+                    state.get(finance_key), incoming.get(finance_key), lambda row: True, True
+                )
 
     project_ids = _project_ids_for_user(full_state, user)
     client_ids = {
