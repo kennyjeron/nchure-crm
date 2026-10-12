@@ -791,9 +791,9 @@ new Chart($('#chPr'),{type:'doughnut',data:{labels:ps,datasets:[{data:ps.map(s=>
 let leadFilter='All';
 function renderLeads(){
 const list=db.leads.filter(l=>leadFilter==='All'||l.status===leadFilter);
-const rows=list.map(l=>{const sc=leadScore(l);return '<tr onclick="leadDetail(\''+l.id+'\')" style="cursor:pointer"><td><b>'+esc(l.name)+'</b><div class="muted" style="font-size:11px">'+esc(l.company)+'</div></td><td>'+esc(l.phone)+'</td><td>'+esc(l.requirement||'—').slice(0,40)+(esc(l.requirement).length>40?'…':'')+'</td><td>'+money(l.budget)+'</td><td>'+badge(l.source,'b-gray')+'</td><td>'+badge(l.tag,sc.tag[1])+'<div style="font-size:11px;font-weight:700;margin-top:3px">'+sc.s+'/100</div></td><td>'+stBadge(l.status,LEAD_ST_COLORS)+'</td><td class="muted" style="font-size:11.5px">'+(l.nextFollowUp?fmtD(l.nextFollowUp.date)+' · '+l.nextFollowUp.type:'—')+'</td></tr>'}).join('');
+const rows=list.map(l=>{const sc=leadScore(l);return '<tr onclick="leadDetail(\''+l.id+'\')" style="cursor:pointer"><td><b>'+esc(l.name)+'</b><div class="muted" style="font-size:11px">'+esc(l.company)+'</div></td><td>'+esc(l.phone)+'</td><td>'+esc(l.requirement||'—').slice(0,40)+(esc(l.requirement).length>40?'…':'')+'</td><td>'+money(l.budget)+'</td><td>'+badge(l.source,'b-gray')+'</td><td>'+badge(l.tag,sc.tag[1])+'<div style="font-size:11px;font-weight:700;margin-top:3px">'+sc.s+'/100</div></td><td>'+stBadge(l.status,LEAD_ST_COLORS)+'</td><td class="muted" style="font-size:11.5px">'+(l.nextFollowUp?fmtD(l.nextFollowUp.date)+' · '+l.nextFollowUp.type:'—')+'</td>'+(can('leads')?'<td><button class="btn btn-danger btn-sm" data-id="'+esc(l.id)+'" onclick="event.stopPropagation();deleteLead(this.dataset.id)">Delete</button></td>':'')+'</tr>'}).join('');
 return '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px"><div><div style="font-size:21px;font-weight:800">Leads</div><div class="muted" style="font-size:12.5px">'+db.leads.length+' leads · AI-scored automatically</div></div><div style="display:flex;gap:8px"><select class="input" style="width:auto" onchange="leadFilter=this.value;render()"><option>All</option>'+LEAD_STATUSES.map(s=>'<option '+(leadFilter===s?'selected':'')+'>'+s+'</option>').join('')+'</select><button class="btn btn-primary" onclick="leadForm()">'+ic('plus',14)+' Add Lead</button></div></div>'+
-'<div class="card" style="overflow:auto"><table><thead><tr><th>Lead</th><th>Phone</th><th>Requirement</th><th>Budget</th><th>Source</th><th>AI Score</th><th>Status</th><th>Follow-up</th></tr></thead><tbody>'+(rows||'<tr><td colspan="8"><div class="empty">No leads yet.<div style="margin-top:10px"><button class="btn btn-primary btn-sm" onclick="leadForm()">Create your first lead</button></div></div></td></tr>')+'</tbody></table></div>';
+'<div class="card" style="overflow:auto"><table><thead><tr><th>Lead</th><th>Phone</th><th>Requirement</th><th>Budget</th><th>Source</th><th>AI Score</th><th>Status</th><th>Follow-up</th>'+(can('leads')?'<th>Actions</th>':'')+'</tr></thead><tbody>'+(rows||'<tr><td colspan="'+(can('leads')?9:8)+'"><div class="empty">No leads yet.<div style="margin-top:10px"><button class="btn btn-primary btn-sm" onclick="leadForm()">Create your first lead</button></div></div></td></tr>')+'</tbody></table></div>';
 }
 function leadForm(id){
 const l=id?db.leads.find(x=>x.id===id):null;
@@ -869,6 +869,7 @@ saveDB();closeModal();toast('🎉 Lead won — client '+c.company+' created');
 location.hash='#/client/'+c.id;render();
 }
 function deleteLead(id){
+if(!can('leads')){toast('You do not have permission to delete leads','err');return}
 confirmBox('Delete this lead? All activity history will be lost.',()=>{
 db.leads=db.leads.filter(l=>l.id!==id);audit(session.user.name,'deleted lead',id,'','');saveDB();closeModal();toast('Lead deleted');render();
 });
@@ -1285,19 +1286,21 @@ function userForm(id){
  const hideOwnPassword=isSelf&&session.user?.role==='CEO';
  const allowedRoles=session.user&&session.user.role==='Founder'?STAFF_ROLES:STAFF_ROLES.filter(r=>r!=='Founder');
  if(id&&u?.role==='Founder'&&session.user?.role!=='Founder'){toast('Only Founder can edit the Founder profile','err');return}
+ const defaultRole=u?.role||(allowedRoles.includes('Staff')?'Staff':allowedRoles[0]);
  const passwordLabel=hasAccount?'New Password (optional)':'Password*';
  const passwordHelp=hideOwnPassword?'Password changes are disabled from your own CEO profile.':(hasAccount?'Leave blank to keep the current password.':'Initial sign-in password; use at least 14 characters.');
- const body='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" class="formgrid">'+
+ const body='<input type="hidden" id="uf-edit-id" value="'+esc(u?.id||'')+'"><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" class="formgrid">'+
  f('Name*','','<input class="input" id="uf-name" autocomplete="name" required value="'+esc(u?.name||'')+'">')+
  f('Email*','','<input class="input" id="uf-email" type="email" autocomplete="email" required value="'+esc(u?.email||'')+'">')+
  (hideOwnPassword?'':f(passwordLabel,'','<input class="input" id="uf-password" type="password" autocomplete="new-password" '+(!hasAccount?'required':'')+' minlength="14" placeholder="'+(hasAccount?'Leave blank to keep current password':'Minimum 14 characters')+'">'))+
- '<div><label class="muted" style="font-size:11px;font-weight:600">Role*</label><select class="input" id="uf-role" required '+(isSelf?'disabled':'')+'>'+allowedRoles.map(r=>'<option value="'+esc(r)+'" '+(u?.role===r?'selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div>'+
- f('Department','','<input class="input" id="uf-dept" placeholder="e.g. Management, Engineering, Sales" value="'+esc(u?.dept||'')+'">')+
+ '<div><label class="muted" style="font-size:11px;font-weight:600">Role*</label><select class="input" id="uf-role" required '+(isSelf?'disabled':'')+' onchange="syncRoleOrgFields()">'+allowedRoles.map(r=>'<option value="'+esc(r)+'" '+(defaultRole===r?'selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div>'+
+ '<div><label class="muted" style="font-size:11px;font-weight:600">Department</label><input class="input" id="uf-dept" readonly value="'+esc(u?.dept||roleDepartment(defaultRole))+'"></div>'+
+ '<div><label class="muted" style="font-size:11px;font-weight:600">Reports To</label><select class="input" id="uf-reports-to">'+reportingOptionsHtml(defaultRole,u?.id,u?.reportsTo)+'</select><div class="muted" style="font-size:10.5px;margin-top:4px">Select the direct manager or team lead for this role.</div></div>'+
  f('Phone','','<input class="input" id="uf-phone" type="tel" autocomplete="tel" placeholder="+91…" value="'+esc(u?.phone||'')+'">')+
  f('Skills (comma separated)','','<input class="input" id="uf-skills" placeholder="Leadership, Strategy" value="'+esc((u?.skills||[]).join(', '))+'">')+
  f('Joining Date','','<input class="input" id="uf-joined" type="date" value="'+esc(u?.joined||today())+'">')+'</div>'+
  '<div class="muted" style="font-size:11px;margin-top:10px;line-height:1.5">'+esc(passwordHelp)+' Passwords are stored as secure hashes and are never saved in the dashboard profile.</div>';
- openModal(u?'Edit Team Member':'Add Team Member',body,'<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveUser(\''+(id||'')+'\')">'+(u?'Save Changes':'Create Account')+'</button>',true);
+ openModal(u?'Edit Team Member':'Add Team Member',body,'<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveUser(\\''+(id||'')+'\\')">'+(u?'Save Changes':'Create Account')+'</button>',true);
 }
 
 async function saveUser(id){
@@ -1310,6 +1313,9 @@ async function saveUser(id){
  if(!role||!allowedRoles.includes(role)){toast('You cannot assign that role','err');return}
  if((!hasAccount||password)&&password.length<14){toast('Password must be at least 14 characters','err');return}
  if(id&&u?.role==='Founder'&&session.user?.role!=='Founder'){toast('Only Founder can edit the Founder profile','err');return}
+ const reportingId=g('reports-to');
+ const reportingUser=reportingId?db.users.find(x=>String(x.id)===String(reportingId)):null;
+ if(reportingId&&(!reportingUser||!allowedSupervisorRoles(role).includes(reportingUser.role))){toast('Choose a valid reporting manager for this role','err');return}
  const duplicate=db.users.find(x=>String(x.email||'').toLowerCase()===email&&String(x.id)!==String(id||''));
  if(duplicate){toast('Email already exists in this workspace','err');return}
  const primary=$('#modalRoot .modal .btn-primary');
@@ -1333,7 +1339,9 @@ async function saveUser(id){
   name:account.name,
   email:account.email,
   role:account.role,
-  dept:g('dept')||'—',
+  dept:roleDepartment(role),
+  reportsTo:reportingUser?String(reportingUser.id):null,
+  reportsToName:reportingUser?reportingUser.name:'',
   phone:g('phone'),
   skills:g('skills').split(',').map(s=>s.trim()).filter(Boolean),
   joined:g('joined')||today(),
@@ -1637,10 +1645,11 @@ confirmBox('Delete this document?',()=>{const d=db.documents.find(x=>x.id===id);
 // ============ MEETINGS ============
 function renderMeetings(){
 const rows=db.meetings.map(m=>'<tr><td><b>'+esc(m.title)+'</b><div class="muted" style="font-size:11px">'+esc(clientName(m.clientId))+' · '+esc(projName(m.projectId))+'</div></td><td>'+fmtD(m.date)+' · '+m.time+'</td><td>'+m.participants.map(p=>esc(p)).join(', ')+'</td><td class="muted">'+esc(m.link)+'</td><td><button class="btn btn-ghost btn-sm" onclick="meetDetail(\''+m.id+'\')">Open</button></td></tr>').join('');
-return '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px"><div><div style="font-size:21px;font-weight:800">Meetings</div><div class="muted" style="font-size:12.5px">Action items can become tasks with one click</div></div><button class="btn btn-primary" onclick="meetForm()">'+ic('plus',14)+' Schedule</button></div>'+
+return '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px"><div><div style="font-size:21px;font-weight:800">Meetings</div><div class="muted" style="font-size:12.5px">Action items can become tasks with one click</div></div>'+(canScheduleMeet()?'<button class="btn btn-primary" onclick="meetForm()">'+ic('plus',14)+' Schedule</button>':'')+'</div>'+
 '<div class="card" style="overflow:auto"><table><thead><tr><th>Title</th><th>When</th><th>Participants</th><th>Link</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="5"><div class="empty">No meetings scheduled</div></td></tr>')+'</tbody></table></div>';
 }
 function meetForm(){
+if(!canScheduleMeet()){toast('Only Founder, CEO, Admin, CTO, COO and team leads can schedule meetings','err');return}
 openModal('Schedule Meeting','<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" class="formgrid">'+
 f('Title*','','<input class="input" id="mf2-title" placeholder="Meeting title">')+
 '<div><label class="muted" style="font-size:11px;font-weight:600">Client</label><select class="input" id="mf2-client">'+db.clients.map(c=>'<option value="'+c.id+'">'+esc(c.company)+'</option>').join('')+'</select></div>'+
@@ -1651,6 +1660,7 @@ f('Meeting Link','','<input class="input" id="mf2-link" placeholder="meet.google
 '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveMeet()">Schedule</button>',true);
 }
 function saveMeet(){
+if(!canScheduleMeet()){toast('You do not have permission to schedule meetings','err');return}
 const t=$('#mf2-title').value.trim();if(!t){toast('Enter title','err');return}
 db.meetings.push({id:'ME-'+Date.now().toString().slice(-5),title:t,clientId:$('#mf2-client').value,projectId:$('#mf2-proj').value,date:$('#mf2-date').value,time:$('#mf2-time').value,participants:[session.user.name],link:$('#mf2-link').value,agenda:$('#mf2-agenda').value.trim(),notes:'',actions:[]});
 audit(session.user.name,'scheduled meeting',t,'','');notify('Meeting scheduled: '+t,'meeting');saveDB();closeModal();toast('Meeting scheduled');render();
