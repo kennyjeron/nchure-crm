@@ -136,9 +136,99 @@ const initials=n=>n.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
 const avatar=(n,size)=>{const cols=['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#0ea5e9','#f43f5e'];const c=cols[(n||'').length%7];return '<span style="width:'+size+'px;height:'+size+'px;background:'+c+';color:#fff;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:'+Math.round(size*.38)+'px;font-weight:700">'+esc(initials(n||'?'))+'</span>'};
 
 // ============ CONSTANTS ============
-const ROLES=['Founder','CEO','CTO','COO','Admin','Team Leader','Sales Manager','Sales Executive','Project Manager','Developer','Designer','Content Team','Accountant','Support Executive','Staff','Client'];
+const ROLE_GROUPS={
+ 'Executive & Governance':['Founder','CEO','CTO','COO','CFO','CMO','CHRO','CPO','CRO','CIO','CISO','Admin','Executive Assistant'],
+ 'Engineering & Data':['VP of Engineering','Engineering Manager','Engineering Team Lead','Principal Engineer','Senior Software Engineer','Software Engineer','Junior Software Engineer','Frontend Developer','Backend Developer','Full Stack Developer','Mobile App Developer','DevOps Engineer','Cloud Engineer','AI/ML Engineer','Data Scientist','Data Analyst','Data Engineer','Database Administrator'],
+ 'Product & Design':['VP of Product','Product Manager','Product Team Lead','Product Designer','Design Manager','Design Team Lead','Principal Designer','Senior Designer','UI/UX Designer','Junior UI/UX Designer','Graphic Designer','Brand Designer','Motion Designer','Junior Designer','UX Researcher'],
+ 'Quality Assurance':['QA Manager','QA Team Lead','Senior QA Engineer','QA Engineer','Automation Test Engineer','Junior QA Engineer'],
+ 'Sales & Business Development':['VP of Sales','Sales Manager','Sales Team Lead','Senior Sales Executive','Sales Executive','Sales Development Representative','Business Development Executive','Account Executive','Account Manager','Sales Operations Specialist'],
+ 'Marketing & Content':['Marketing Manager','Marketing Team Lead','SEO Specialist','Performance Marketing Specialist','Social Media Executive','Content Strategist','Senior Content Writer','Content Writer','Video Editor','Creative Producer','Marketing Analyst'],
+ 'Operations & Delivery':['VP of Operations','Operations Manager','Operations Team Lead','Project Manager','Project Team Lead','Senior Project Coordinator','Project Coordinator','Business Analyst','Business Operations Executive','Procurement Specialist'],
+ 'People & HR':['HR Manager','HR Team Lead','Talent Acquisition Specialist','HR Executive','HR Coordinator','Learning & Development Specialist'],
+ 'Finance & Legal':['Finance Manager','Finance Team Lead','Senior Accountant','Accountant','Finance Analyst','Payroll Specialist','Legal & Compliance Manager','Legal Executive','Compliance Analyst'],
+ 'Customer Success & Support':['Customer Success Manager','Customer Success Team Lead','Customer Success Executive','Support Manager','Support Team Lead','Senior Support Executive','Support Executive','Technical Support Engineer'],
+ 'IT & Security':['IT Manager','IT Team Lead','System Administrator','IT Support Engineer','Security Manager','Security Team Lead','Security Analyst'],
+ 'General Roles':['Team Leader','Intern','Staff','Client']
+};
+const ROLES=[...new Set(Object.values(ROLE_GROUPS).flat())];
 const STAFF_ROLES=ROLES.filter(r=>r!=='Client');
-const LEADERSHIP_ROLES=['Founder','CEO','CTO','COO','Admin','Team Leader'];
+const LEADERSHIP_ROLES=['Founder','CEO','CTO','COO','CFO','CMO','CHRO','CPO','CRO','CIO','CISO','Admin','Team Leader'];
+const ROLE_DEPARTMENTS=Object.fromEntries(Object.entries(ROLE_GROUPS).flatMap(([d,roles])=>roles.map(role=>[role,d])));
+const ROLE_DEPARTMENT_OVERRIDES={
+ 'Founder':'Executive & Governance','CEO':'Executive & Governance','CTO':'Engineering & Data','COO':'Operations & Delivery',
+ 'CFO':'Finance & Legal','CMO':'Marketing & Content','CHRO':'People & HR','CPO':'Product & Design',
+ 'CRO':'Sales & Business Development','CIO':'IT & Security','CISO':'IT & Security','Admin':'Executive & Governance',
+ 'Executive Assistant':'Executive & Governance','Team Leader':'General Roles'
+};
+function roleDepartment(role){return ROLE_DEPARTMENT_OVERRIDES[role]||ROLE_DEPARTMENTS[role]||'General Roles';}
+const ROLE_HIERARCHY={
+ 'Engineering & Data':{executive:['CTO','COO','CEO'],vp:'VP of Engineering',manager:'Engineering Manager',lead:'Engineering Team Lead',senior:'Principal Engineer'},
+ 'Product & Design':{executive:['CPO','COO','CEO'],vp:'VP of Product',manager:'Product Manager',lead:'Product Team Lead',senior:'Senior Designer'},
+ 'Quality Assurance':{executive:['CTO','COO','CEO'],vp:'VP of Engineering',manager:'QA Manager',lead:'QA Team Lead',senior:'Senior QA Engineer'},
+ 'Sales & Business Development':{executive:['CRO','COO','CEO'],vp:'VP of Sales',manager:'Sales Manager',lead:'Sales Team Lead',senior:'Senior Sales Executive'},
+ 'Marketing & Content':{executive:['CMO','CRO','CEO'],vp:'CMO',manager:'Marketing Manager',lead:'Marketing Team Lead',senior:'Content Strategist'},
+ 'Operations & Delivery':{executive:['COO','CEO'],vp:'VP of Operations',manager:'Operations Manager',lead:'Operations Team Lead',senior:'Senior Project Coordinator'},
+ 'People & HR':{executive:['CHRO','COO','CEO'],manager:'HR Manager',lead:'HR Team Lead',senior:'Talent Acquisition Specialist'},
+ 'Finance & Legal':{executive:['CFO','COO','CEO'],manager:'Finance Manager',lead:'Finance Team Lead',senior:'Senior Accountant'},
+ 'Customer Success & Support':{executive:['CRO','COO','CEO'],manager:'Customer Success Manager',lead:'Customer Success Team Lead',senior:'Senior Support Executive'},
+ 'IT & Security':{executive:['CIO','CTO','COO'],manager:'IT Manager',lead:'IT Team Lead',senior:'System Administrator'}
+};
+const ROLE_SUPERVISORS={
+ 'CEO':['Founder'],'CTO':['CEO','Founder'],'COO':['CEO','Founder'],'CFO':['CEO','Founder'],'CMO':['CEO','Founder'],
+ 'CHRO':['CEO','Founder'],'CPO':['CEO','Founder'],'CRO':['CEO','Founder'],'CIO':['CEO','Founder'],'CISO':['CEO','CTO','Founder'],
+ 'Admin':['CEO','COO','Founder'],'Executive Assistant':['CEO','Founder'],
+ 'VP of Engineering':['CTO','COO','CEO'],'VP of Product':['CPO','CEO','COO'],'VP of Sales':['CRO','CEO','COO'],
+ 'VP of Operations':['COO','CEO'],'Engineering Manager':['VP of Engineering','CTO','COO'],'QA Manager':['VP of Engineering','CTO','COO'],
+ 'Design Manager':['CPO','VP of Product','COO'],'Product Manager':['CPO','VP of Product','CEO'],
+ 'Sales Manager':['VP of Sales','CRO','CEO'],'Marketing Manager':['CMO','CRO','CEO'],'Operations Manager':['VP of Operations','COO','CEO'],
+ 'HR Manager':['CHRO','COO','CEO'],'Finance Manager':['CFO','COO','CEO'],'Legal & Compliance Manager':['CFO','CEO','Admin'],
+ 'Customer Success Manager':['CRO','COO','CEO'],'Support Manager':['Customer Success Manager','COO','CEO'],
+ 'IT Manager':['CIO','CTO','COO'],'Security Manager':['CISO','CIO','CTO'],
+ 'Product Team Lead':['Product Manager','VP of Product','CPO'],'Design Team Lead':['Design Manager','Product Manager','CPO'],
+ 'Engineering Team Lead':['Engineering Manager','VP of Engineering'],'QA Team Lead':['QA Manager','VP of Engineering'],
+ 'Sales Team Lead':['Sales Manager','VP of Sales'],'Marketing Team Lead':['Marketing Manager','CMO'],
+ 'Operations Team Lead':['Operations Manager','VP of Operations'],'Project Team Lead':['Project Manager','Operations Manager'],
+ 'HR Team Lead':['HR Manager','CHRO'],'Finance Team Lead':['Finance Manager','CFO'],
+ 'Customer Success Team Lead':['Customer Success Manager','CRO'],'Support Team Lead':['Support Manager','Customer Success Manager'],
+ 'IT Team Lead':['IT Manager','CIO'],'Security Team Lead':['Security Manager','CISO']
+};
+function roleLevel(role){
+ if(LEADERSHIP_ROLES.includes(role)||role==='Executive Assistant')return 'Executive';
+ if(/^VP /.test(role))return 'VP';
+ if(role.includes('Manager'))return 'Manager';
+ if(role.includes('Team Lead')||role==='Team Leader')return 'Team Lead';
+ if(role.includes('Principal'))return 'Principal';
+ if(role.includes('Senior'))return 'Senior';
+ if(role.includes('Junior')||role==='Intern')return 'Junior';
+ return 'Individual Contributor';
+}
+function allowedSupervisorRoles(role){
+ if(ROLE_SUPERVISORS[role])return ROLE_SUPERVISORS[role];
+ const h=ROLE_HIERARCHY[roleDepartment(role)];
+ if(!h)return ['CEO','COO','Team Leader'];
+ const level=roleLevel(role), candidates=[];
+ if(level==='VP')candidates.push(...h.executive);
+ else if(level==='Manager')candidates.push(h.vp,...h.executive);
+ else if(level==='Team Lead')candidates.push(h.manager,h.vp,...h.executive);
+ else if(level==='Principal'||level==='Senior')candidates.push(h.lead,h.manager,h.vp,...h.executive);
+ else candidates.push(h.senior,h.lead,h.manager,h.vp,...h.executive);
+ return [...new Set(candidates.filter(Boolean))];
+}
+function reportingSupervisorCandidates(role,currentId){
+ const allowed=allowedSupervisorRoles(role);
+ return db.users.filter(u=>String(u.id)!==String(currentId||'')&&String(u.authId||'')!==String(currentId||'')&&allowed.includes(u.role));
+}
+function reportingOptionsHtml(role,currentId,selectedId){
+ const candidates=reportingSupervisorCandidates(role,currentId);
+ return '<option value="">— Not assigned —</option>'+candidates.map(u=>'<option value="'+esc(u.id)+'" '+(String(u.id)===String(selectedId||'')?'selected':'')+'>'+esc(u.name)+' · '+esc(u.role)+'</option>').join('');
+}
+function syncRoleOrgFields(){
+ const roleEl=$('#uf-role'),deptEl=$('#uf-dept'),reportsEl=$('#uf-reports-to');
+ if(!roleEl||!deptEl||!reportsEl)return;
+ const role=roleEl.value,selected=reportsEl.value;
+ deptEl.value=roleDepartment(role);
+ reportsEl.innerHTML=reportingOptionsHtml(role,$('#uf-edit-id')?.value||'',selected);
+}
 const LEAD_STATUSES=['New','Contacted','Qualified','Meeting','Proposal Sent','Negotiation','Won','Lost'];
 const LEAD_SOURCES=['Website','Instagram','Facebook','Google','WhatsApp','Referral','LinkedIn','Advertisement','Direct','Other'];
 const LEAD_ST_COLORS={New:'b-blue',Contacted:'b-violet',Qualified:'b-amber',Meeting:'b-pink','Proposal Sent':'b-violet',Negotiation:'b-amber',Won:'b-green',Lost:'b-red'};
@@ -289,14 +379,33 @@ const WORKER_ROLES=new Set(ROLES.filter(r=>r!=='Client'&&!FULL_WORKSPACE_ROLES.h
 const WORKER_NAV_MODS=new Set(['dashboard','projects','tasks','calendar','messages','meetings','activity','tickets','documents','ai']);
 const TEAM_LEADER_NAV_MODS=new Set(['dashboard','clients','projects','tasks','calendar','messages','meetings','activity','tickets','documents','ai','analytics']);
 const EXECUTIVE_NAV_MODS=new Set(['dashboard','leads','pipeline','followups','clients','projects','tasks','calendar','quotations','invoices','payments','expenses','messages','meetings','activity','tickets','documents','analytics','ai']);
+const DEPT_NAV_ACCESS={
+ 'Engineering & Data':['dashboard','projects','tasks','calendar','messages','meetings','activity','tickets','documents','ai'],
+ 'Product & Design':['dashboard','projects','tasks','calendar','messages','meetings','activity','tickets','documents','ai'],
+ 'Quality Assurance':['dashboard','projects','tasks','calendar','messages','meetings','activity','tickets','documents','ai'],
+ 'Sales & Business Development':['dashboard','leads','pipeline','followups','clients','quotations','tasks','calendar','messages','meetings','activity','documents','ai'],
+ 'Marketing & Content':['dashboard','leads','pipeline','followups','clients','tasks','calendar','messages','meetings','activity','documents','ai'],
+ 'Operations & Delivery':['dashboard','clients','projects','tasks','calendar','messages','meetings','activity','tickets','documents','ai'],
+ 'People & HR':['dashboard','tasks','calendar','messages','meetings','activity','documents','ai'],
+ 'Finance & Legal':['dashboard','clients','invoices','payments','expenses','messages','meetings','activity','documents','ai'],
+ 'Customer Success & Support':['dashboard','clients','projects','tasks','calendar','messages','meetings','activity','tickets','documents','ai'],
+ 'IT & Security':['dashboard','projects','tasks','calendar','messages','meetings','activity','tickets','documents','ai'],
+ 'Executive & Governance':['dashboard','messages','meetings','activity','documents','ai'],
+ 'General Roles':['dashboard','projects','tasks','calendar','messages','meetings','activity','tickets','documents','ai']
+};
+const MEETING_SCHEDULER_ROLES=new Set(['Founder','CEO','Admin','CTO','COO','Team Leader',...ROLES.filter(r=>r.endsWith('Team Lead'))]);
+function canScheduleMeet(){const role=session.user&&session.user.role;return !!role&&(MEETING_SCHEDULER_ROLES.has(role)||String(role).endsWith('Team Lead'));}
 function isWorkerRole(role){return WORKER_ROLES.has(String(role||''));}
 function can(mod){
  const role=session.user&&session.user.role;
  if(!role||role==='Client')return false;
- if(isWorkerRole(role))return WORKER_NAV_MODS.has(mod);
- if(role==='Team Leader')return TEAM_LEADER_NAV_MODS.has(mod);
  if(role==='CTO'||role==='COO')return EXECUTIVE_NAV_MODS.has(mod);
- return !!(PERM[mod]&&PERM[mod].includes(role));
+ if(role==='Team Leader')return TEAM_LEADER_NAV_MODS.has(mod);
+ if(['Founder','CEO','Admin'].includes(role))return !!(PERM[mod]&&PERM[mod].includes(role));
+ const dept=roleDepartment(role);
+ const access=new Set(DEPT_NAV_ACCESS[dept]||WORKER_NAV_MODS);
+ if(['Manager','Team Lead','VP','Executive'].includes(roleLevel(role))&&mod==='analytics')return true;
+ return access.has(mod);
 }
 
 // ============ SESSION / AUTH ============
