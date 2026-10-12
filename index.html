@@ -284,7 +284,20 @@ analytics:['Founder','CEO','Admin','Accountant','Sales Manager','Project Manager
 ai:['Founder','CEO','Admin','Project Manager','Sales Manager','Accountant'],
 settings:['Founder','CEO','Admin']
 };
-function can(mod){const u=session.user;return u&&PERM[mod]&&PERM[mod].includes(u.role)}
+const FULL_WORKSPACE_ROLES=new Set(['Founder','CEO','CTO','COO','Admin','Team Leader']);
+const WORKER_ROLES=new Set(ROLES.filter(r=>r!=='Client'&&!FULL_WORKSPACE_ROLES.has(r)));
+const WORKER_NAV_MODS=new Set(['dashboard','projects','tasks','calendar','messages','meetings','activity','tickets','documents','ai']);
+const TEAM_LEADER_NAV_MODS=new Set(['dashboard','clients','projects','tasks','calendar','messages','meetings','activity','tickets','documents','ai','analytics']);
+const EXECUTIVE_NAV_MODS=new Set(['dashboard','leads','pipeline','followups','clients','projects','tasks','calendar','quotations','invoices','payments','expenses','messages','meetings','activity','tickets','documents','analytics','ai']);
+function isWorkerRole(role){return WORKER_ROLES.has(String(role||''));}
+function can(mod){
+ const role=session.user&&session.user.role;
+ if(!role||role==='Client')return false;
+ if(isWorkerRole(role))return WORKER_NAV_MODS.has(mod);
+ if(role==='Team Leader')return TEAM_LEADER_NAV_MODS.has(mod);
+ if(role==='CTO'||role==='COO')return EXECUTIVE_NAV_MODS.has(mod);
+ return !!(PERM[mod]&&PERM[mod].includes(role));
+}
 
 // ============ SESSION / AUTH ============
 let session={user:null};
@@ -299,26 +312,37 @@ const DEMO_EMAILS=new Set([
   'rahul@nchure.com','suresh@nchure.com','anita@nchure.com','meera@nchure.com','vignesh@nchure.com',
   'farhan@nchure.com','saravanan@abcacademy.in'
 ]);
-const WORKSPACE_ROLES=new Set(['Founder','CEO','Admin','Team Leader']);
-function isWorkspaceRole(role){return WORKSPACE_ROLES.has(String(role||''));}
 async function activateSession(me){
-  if(!isWorkspaceRole(me.role))throw new Error('This workspace is currently available to Founder, CEO, Admin and Team Leader accounts only.');
+  // Every authenticated role can sign in. The API supplies a role-scoped state.
   const remote=await loadStateFromBackend();
   if(remote)db=remote;
   if(!db||typeof db!=='object'||!Array.isArray(db.users))seed();
   const arrayKeys=['clients','leads','projects','milestones','tasks','quotations','invoices','payments','expenses','tickets','documents','approvals','meetings','messages','notifications','audit','aiChats'];
   for(const key of arrayKeys)if(!Array.isArray(db[key]))db[key]=[];
   if(!db.settings||typeof db.settings!=='object')db.settings={company:'NCHURE',tagline:'Business Growth Infrastructure',email:'',phone:'',address:'',gst:'',taxRate:18,currency:'₹',invoicePrefix:'INV',quotPrefix:'QT',services:[]};
-  // Strip the previous mock logins; actual accounts are managed by the backend.
+  // Remove demo profiles and refresh authoritative accounts so deleted members
+  // cannot remain as stale duplicate rows in the browser's JSON snapshot.
   db.users=db.users.filter(u=>u&&(!DEMO_EMAILS.has(String(u.email||'').toLowerCase())||String(u.email||'').toLowerCase()===String(me.email||'').toLowerCase()));
+  if(['Founder','CEO','Admin'].includes(me.role)){
+    try{
+      const activeMembers=await apiRequest('/api/team-members');
+      if(Array.isArray(activeMembers)){
+        const oldProfiles=new Map(db.users.map(u=>[String(u.email||'').toLowerCase(),u]));
+        db.users=activeMembers.map(m=>{
+          const old=oldProfiles.get(String(m.email||'').toLowerCase())||{};
+          return {...old,id:String(m.id),authId:Number(m.id),name:m.name,email:m.email,role:m.role};
+        });
+      }
+    }catch(e){console.warn('Could not refresh active team members:',e.message)}
+  }
   const previousUser=db.users.find(u=>String(u.email||'').toLowerCase()===String(me.email||'').toLowerCase())||{};
-  const user={...previousUser,id:String(me.id),authId:Number(me.id),name:me.name,email:me.email,role:me.role,dept:previousUser.dept||(me.role==='Founder'||me.role==='CEO'?'Management':'Operations'),phone:previousUser.phone||'',skills:Array.isArray(previousUser.skills)?previousUser.skills:[],joined:previousUser.joined||today()};
+  const user={...previousUser,id:String(me.id),authId:Number(me.id),name:me.name,email:me.email,role:me.role,dept:previousUser.dept||(me.role==='Founder'||me.role==='CEO'||me.role==='CTO'||me.role==='COO'?'Management':'Operations'),phone:previousUser.phone||'',skills:Array.isArray(previousUser.skills)?previousUser.skills:[],joined:previousUser.joined||today()};
   db.users=db.users.filter(u=>String(u.email||'').toLowerCase()!==String(me.email||'').toLowerCase());
   db.users.unshift(user);
   session={user};
   persistSession();
   saveDB();
-  location.hash='#/dashboard';
+  location.hash=me.role==='Client'?'#/p-dashboard':'#/dashboard';
   render();
 }
 async function login(email,pass){
@@ -384,8 +408,8 @@ const NAV=[
 {label:'Sales',items:[{mod:'quotations',route:'#/quotations',icon:'quot',label:'Quotations'}]},
 {label:'Finance',items:[{mod:'invoices',route:'#/invoices',icon:'inv',label:'Invoices'},{mod:'payments',route:'#/payments',icon:'pay',label:'Payments'},{mod:'expenses',route:'#/expenses',icon:'exp',label:'Expenses'}]},
 {label:'Communication',items:[{mod:'messages',route:'#/messages',icon:'msg',label:'Messages'},{mod:'meetings',route:'#/meetings',icon:'meet',label:'Meetings'},{mod:'activity',route:'#/activity',icon:'act',label:'Activity'}]},
-{label:'Support',items:[{mod:'tickets',route:'#/tickets',icon:'ticket',label:'Tickets'}]},
-{label:'',items:[{mod:'documents',route:'#/documents',icon:'doc',label:'Documents'},{mod:'team',route:'#/team',icon:'team',label:'Team'},{mod:'analytics',route:'#/analytics',icon:'ana',label:'Analytics'},{mod:'ai',route:'#/ai',icon:'ai',label:'AI Assistant'}]}
+{label:'Support',items:[{mod:'tickets',route:'#/tickets',icon:'ticket',label:'Tickets'},{mod:'documents',route:'#/documents',icon:'doc',label:'Documents'},{mod:'ai',route:'#/ai',icon:'ai',label:'AI Assistant'}]},
+{label:'',items:[{mod:'team',route:'#/team',icon:'team',label:'Team'},{mod:'analytics',route:'#/analytics',icon:'ana',label:'Analytics'}]}
 ];
 const PNAV=[
 {items:[{route:'#/p-dashboard',icon:'dash',label:'Dashboard'},{route:'#/p-projects',icon:'proj',label:'My Projects'},{route:'#/p-tasks',icon:'tasks',label:'Tasks'},{route:'#/p-approvals',icon:'check',label:'Approvals'}]},
@@ -536,6 +560,56 @@ else if(range==='This Year')from=dISO(new Date(d.getFullYear(),0,1));
 else from='1970-01-01';
 return {from,to:today()};
 }
+function workerAssignedTasks(){
+ const name=String(session.user&&session.user.name||'').toLowerCase();
+ return db.tasks.filter(t=>String(t.assignedTo||'').toLowerCase()===name||String(t.assignedToId||'')===String(session.user&&session.user.id||''));
+}
+function workerTaskStatus(id,status){
+ const t=db.tasks.find(x=>String(x.id)===String(id));
+ if(!t||!workerAssignedTasks().some(x=>String(x.id)===String(id))){toast('This task is not assigned to you','err');return}
+ if(!['To Do','In Progress','Review','Blocked','Completed'].includes(status)){toast('Invalid task status','err');return}
+ const old=t.status;t.status=status;
+ audit(session.user.name,'updated assigned task',t.id+' '+t.name,old,status);
+ saveDB();render();toast('Task status updated');
+}
+function renderWorkerDashboard(){
+ const tasks=workerAssignedTasks();
+ const openTasks=tasks.filter(t=>t.status!=='Completed');
+ const projects=db.projects||[];
+ const tickets=(db.tickets||[]).filter(t=>!['Resolved','Closed'].includes(t.status));
+ const meetings=(db.meetings||[]).filter(m=>!m.date||m.date>=today()).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))).slice(0,4);
+ const card=(label,value,sub,icon)=>'<div class="card" style="padding:16px;min-width:0"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.45px">'+label+'</div>'+ic(icon,18)+'</div><div style="font-size:27px;font-weight:800;margin:8px 0 3px">'+value+'</div><div class="muted" style="font-size:11.5px">'+sub+'</div></div>';
+ const taskRows=openTasks.slice(0,5).map(t=>'<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><div style="min-width:0"><b style="font-size:12.5px">'+esc(t.name||t.title||'Task')+'</b><div class="muted" style="font-size:11px;margin-top:3px">'+esc(projName(t.projectId))+' · Due '+esc(t.dueDate||'—')+'</div></div><span>'+badge(t.status||'Pending','b-gray')+'</span></div>').join('');
+ const meetingRows=meetings.map(m=>'<div style="padding:10px 0;border-bottom:1px solid var(--border)"><b style="font-size:12.5px">'+esc(m.title||'Meeting')+'</b><div class="muted" style="font-size:11px;margin-top:3px">'+esc(m.date||'Date not set')+' '+esc(m.time||'')+'</div></div>').join('');
+ return '<div style="margin-bottom:16px"><div style="font-size:22px;font-weight:800">My Workspace</div><div class="muted" style="font-size:12.5px">Your assigned work, upcoming meetings and support queue</div></div>'+
+ '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:14px">'+
+ card('My Projects',projects.length,'Projects assigned to you','proj')+
+ card('Open Tasks',openTasks.length,tasks.length+' assigned task(s)','tasks')+
+ card('Upcoming Meetings',meetings.length,'Scheduled meetings','meet')+
+ card('Open Tickets',tickets.length,'Tickets in your queue','ticket')+'</div>'+
+ '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:14px">'+
+ '<div class="card" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:14px">My Next Tasks</b><button class="btn btn-ghost btn-sm" onclick="location.hash=\'#/tasks\'">View all</button></div>'+(taskRows||'<div class="empty">No assigned tasks right now</div>')+'</div>'+
+ '<div class="card" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:14px">Upcoming Meetings</b><button class="btn btn-ghost btn-sm" onclick="location.hash=\'#/calendar\'">Open calendar</button></div>'+(meetingRows||'<div class="empty">No upcoming meetings</div>')+'</div>'+
+ '</div><div class="muted" style="font-size:11px;margin-top:12px">Your dashboard shows only work shared with or assigned to your account.</div>';
+}
+function renderWorkerProjects(){
+ const rows=(db.projects||[]).map(p=>'<div class="card" style="padding:15px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div><b style="font-size:14px">'+esc(p.name||'Project')+'</b><div class="muted" style="font-size:11.5px;margin-top:4px">'+esc(clientName(p.clientId))+'</div></div>'+badge(p.status||'Planning','b-gray')+'</div><div class="muted" style="font-size:11.5px;margin-top:10px">Project manager: '+esc(p.pm||'Not assigned')+' · Due: '+esc(p.dueDate||'—')+'</div></div>').join('');
+ return '<div style="margin-bottom:16px"><div style="font-size:21px;font-weight:800">All Projects</div><div class="muted" style="font-size:12.5px">Projects assigned to you or shared with your team</div></div>'+(rows||'<div class="card"><div class="empty">No projects are assigned to you yet</div></div>');
+}
+function renderWorkerTasks(){
+ const rows=workerAssignedTasks().map(t=>'<div class="card" style="padding:15px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div style="min-width:0"><b style="font-size:14px">'+esc(t.name||t.title||'Task')+'</b><div class="muted" style="font-size:11.5px;margin-top:4px">'+esc(projName(t.projectId))+' · Due '+esc(t.dueDate||'—')+'</div></div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+badge(t.status||'Pending','b-gray')+' '+badge(t.priority||'Normal','b-gray')+'</div></div>'+(t.desc?'<div style="font-size:12.5px;line-height:1.5;margin-top:10px">'+esc(t.desc)+'</div>':'')+
+ (t.status!=='Completed'?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">'+(t.status!=='In Progress'?'<button class="btn btn-ghost btn-sm" onclick="workerTaskStatus(\''+t.id+'\',\'In Progress\')">Start task</button>':'')+'<button class="btn btn-primary btn-sm" onclick="workerTaskStatus(\''+t.id+'\',\'Completed\')">Mark completed</button></div>':'')+'</div>').join('');
+ return '<div style="margin-bottom:16px"><div style="font-size:21px;font-weight:800">My Tasks</div><div class="muted" style="font-size:12.5px">Update the status of your assigned tasks</div></div>'+(rows||'<div class="card"><div class="empty">No tasks are assigned to you yet</div></div>');
+}
+function renderWorkerCalendar(){
+ const events=[];
+ (db.tasks||[]).forEach(t=>{if(t.dueDate)events.push({date:t.dueDate,title:t.name||t.title||'Task',type:'Task',status:t.status,projectId:t.projectId})});
+ (db.meetings||[]).forEach(m=>{if(m.date)events.push({date:m.date,title:m.title||'Meeting',type:'Meeting',status:m.time||'',projectId:m.projectId})});
+ events.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+ const rows=events.map(e=>'<div class="card" style="padding:13px;margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;align-items:center"><div><b style="font-size:13px">'+esc(e.title)+'</b><div class="muted" style="font-size:11px;margin-top:4px">'+esc(e.type)+' · '+esc(projName(e.projectId))+'</div></div><div style="text-align:right;flex:none"><b style="font-size:12px">'+esc(e.date)+'</b><div class="muted" style="font-size:10.5px;margin-top:3px">'+esc(e.status||'')+'</div></div></div>').join('');
+ return '<div style="margin-bottom:16px"><div style="font-size:21px;font-weight:800">My Calendar</div><div class="muted" style="font-size:12.5px">Task deadlines and meetings assigned to you</div></div>'+(rows||'<div class="card"><div class="empty">No deadlines or meetings scheduled</div></div>');
+}
+
 function renderDashboard(){
 const range=window.__range||'This Month';
 const {from}=kpiData(range);
@@ -1131,16 +1205,16 @@ async function deleteUser(id){
  if(!u){toast('Team member not found','err');return}
  if(session.user&&String(session.user.id)===String(u.id)){toast('You cannot delete the current logged-in account','err');return}
  if(LEADERSHIP_ROLES.includes(u.role)&&session.user?.role!=='Founder'){toast('Only Founder can delete leadership profiles','err');return}
- if(!confirm('Deactivate '+u.name+' ('+u.role+')?\\n\\nTheir sign-in account will be disabled.'))return;
+ if(!confirm('Permanently delete '+u.name+' ('+u.role+')?\\n\\nThis removes their sign-in account. They can be invited again later using the same email.'))return;
  const authId=u.authId!=null?Number(u.authId):(/^\d+$/.test(String(u.id||''))?Number(u.id):null);
  if(authId){
   try{await apiRequest('/api/team-members/'+authId,{method:'DELETE'})}
-  catch(e){toast(e.message||'Could not deactivate team member','err');return}
+  catch(e){toast(e.message||'Could not permanently delete team member','err');return}
  }
- db.users=db.users.filter(x=>String(x.id)!==String(id));
- audit(session.user?session.user.name:'System','deactivated user',u.name,u.role,'Deactivated');
- notify('Team member deactivated: '+u.name,'team');
- saveDB();toast('Team member deactivated');render();
+ db.users=db.users.filter(x=>String(x.id)!==String(id)&&String(x.authId)!==String(authId));
+ audit(session.user?session.user.name:'System','permanently deleted user',u.name,u.role,'Deleted');
+ notify('Team member permanently deleted: '+u.name,'team');
+ saveDB();toast('Team member permanently deleted');render();
 }
 
 
@@ -1906,14 +1980,14 @@ const routeMod={dashboard:'dashboard',leads:'leads',pipeline:'pipeline',followup
 if(active==='login')active='dashboard';
 if(!can(routeMod[active]||active)){active='dashboard'}
 switch(active){
-case 'dashboard':content=renderDashboard();break;
+case 'dashboard':content=isWorkerRole(role)?renderWorkerDashboard():renderDashboard();break;
 case 'leads':content=renderLeads();break;
 case 'pipeline':content=renderPipeline();break;
 case 'followups':content=renderFollowups();break;
 case 'clients':content=renderClients();break;
-case 'projects':content=renderProjects();break;
-case 'tasks':content=renderTasks();break;
-case 'calendar':content=renderCalendar();break;
+case 'projects':content=isWorkerRole(role)?renderWorkerProjects():renderProjects();break;
+case 'tasks':content=isWorkerRole(role)?renderWorkerTasks():renderTasks();break;
+case 'calendar':content=isWorkerRole(role)?renderWorkerCalendar():renderCalendar();break;
 case 'quotations':content=renderQuotations();break;
 case 'invoices':content=renderInvoices();break;
 case 'payments':content=renderPayments();break;
