@@ -138,11 +138,11 @@ const avatar=(n,size)=>{const cols=['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10
 // ============ CONSTANTS ============
 const ROLE_GROUPS={
  'Executive & Governance':['Founder','CEO','CTO','COO','CFO','CMO','CHRO','CPO','CRO','CIO','CISO','Admin','Executive Assistant'],
- 'Engineering & Data':['VP of Engineering','Engineering Manager','Engineering Team Lead','Principal Engineer','Senior Software Engineer','Software Engineer','Junior Software Engineer','Frontend Developer','Backend Developer','Full Stack Developer','Mobile App Developer','DevOps Engineer','Cloud Engineer','AI/ML Engineer','Data Scientist','Data Analyst','Data Engineer','Database Administrator'],
- 'Product & Design':['VP of Product','Product Manager','Product Team Lead','Product Designer','Design Manager','Design Team Lead','Principal Designer','Senior Designer','UI/UX Designer','Junior UI/UX Designer','Graphic Designer','Brand Designer','Motion Designer','Junior Designer','UX Researcher'],
+ 'Engineering & Data':['VP of Engineering','Engineering Manager','Engineering Team Lead','Principal Engineer','Senior Software Engineer','Software Engineer','Junior Software Engineer','Frontend Developer','Developer','Backend Developer','Full Stack Developer','Mobile App Developer','DevOps Engineer','Cloud Engineer','AI/ML Engineer','Data Scientist','Data Analyst','Data Engineer','Database Administrator'],
+ 'Product & Design':['VP of Product','Product Manager','Product Team Lead','Product Designer','Designer','Design Manager','Design Team Lead','Principal Designer','Senior Designer','UI/UX Designer','Junior UI/UX Designer','Graphic Designer','Brand Designer','Motion Designer','Junior Designer','UX Researcher'],
  'Quality Assurance':['QA Manager','QA Team Lead','Senior QA Engineer','QA Engineer','Automation Test Engineer','Junior QA Engineer'],
  'Sales & Business Development':['VP of Sales','Sales Manager','Sales Team Lead','Senior Sales Executive','Sales Executive','Sales Development Representative','Business Development Executive','Account Executive','Account Manager','Sales Operations Specialist'],
- 'Marketing & Content':['Marketing Manager','Marketing Team Lead','SEO Specialist','Performance Marketing Specialist','Social Media Executive','Content Strategist','Senior Content Writer','Content Writer','Video Editor','Creative Producer','Marketing Analyst'],
+ 'Marketing & Content':['Marketing Manager','Marketing Team Lead','Content Team','SEO Specialist','Performance Marketing Specialist','Social Media Executive','Content Strategist','Senior Content Writer','Content Writer','Video Editor','Creative Producer','Marketing Analyst'],
  'Operations & Delivery':['VP of Operations','Operations Manager','Operations Team Lead','Project Manager','Project Team Lead','Senior Project Coordinator','Project Coordinator','Business Analyst','Business Operations Executive','Procurement Specialist'],
  'People & HR':['HR Manager','HR Team Lead','Talent Acquisition Specialist','HR Executive','HR Coordinator','Learning & Development Specialist'],
  'Finance & Legal':['Finance Manager','Finance Team Lead','Senior Accountant','Accountant','Finance Analyst','Payroll Specialist','Legal & Compliance Manager','Legal Executive','Compliance Analyst'],
@@ -174,6 +174,7 @@ const ROLE_HIERARCHY={
  'IT & Security':{executive:['CIO','CTO','COO'],manager:'IT Manager',lead:'IT Team Lead',senior:'System Administrator'}
 };
 const ROLE_SUPERVISORS={
+ 'Founder':[],'Team Leader':['COO','CEO'],
  'CEO':['Founder'],'CTO':['CEO','Founder'],'COO':['CEO','Founder'],'CFO':['CEO','Founder'],'CMO':['CEO','Founder'],
  'CHRO':['CEO','Founder'],'CPO':['CEO','Founder'],'CRO':['CEO','Founder'],'CIO':['CEO','Founder'],'CISO':['CEO','CTO','Founder'],
  'Admin':['CEO','COO','Founder'],'Executive Assistant':['CEO','Founder'],
@@ -1263,7 +1264,9 @@ function renderTeam(){
   const todo=mine.filter(t=>t.status==='To Do'||t.status==='Review'||t.status==='Blocked').length;
   const projs=db.projects.filter(p=>p.team.includes(u.name)||p.pm===u.name);
   const prod=mine.length?Math.round(done/mine.length*100):0;
-  return '<div class="card" style="padding:16px"><div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">'+avatar(u.name,42)+'<div style="flex:1"><b style="font-size:14px">'+esc(u.name)+'</b><div class="muted" style="font-size:11.5px">'+esc(u.role)+' · '+esc(u.dept)+'</div></div></div>'+
+  const directReports=staff.filter(x=>String(x.reportsTo||'')===String(u.id));
+  const manager=db.users.find(x=>String(x.id)===String(u.reportsTo||''));
+  return '<div class="card" style="padding:16px"><div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">'+avatar(u.name,42)+'<div style="flex:1"><b style="font-size:14px">'+esc(u.name)+'</b><div class="muted" style="font-size:11.5px">'+esc(u.role)+' · '+esc(u.dept)+'</div>'+(manager||u.reportsToName?'<div class="muted" style="font-size:11px;margin-top:3px">Reports to: '+esc(manager?.name||u.reportsToName)+'</div>':'')+(directReports.length?'<div class="muted" style="font-size:11px;margin-top:3px">Leads '+directReports.length+' team member(s)</div>':'')+'</div></div>'+
   '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'+(canManageTeam?'<button class="btn btn-ghost btn-sm" onclick="userForm(\''+u.id+'\')">'+ic('set',12)+' Edit</button><button class="btn btn-danger btn-sm" onclick="deleteUser(\''+u.id+'\')">Delete</button>':'')+'</div>'+
   '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">'+(u.skills||[]).map(s=>'<span class="tag">'+esc(s)+'</span>').join('')+'</div>'+
   '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;margin-bottom:12px">'+
