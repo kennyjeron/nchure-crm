@@ -839,12 +839,52 @@ if(old!==c.status)audit(session.user.name,'changed client status',c.id+' '+c.com
 else{data.id='CL-'+Date.now().toString().slice(-5);data.createdAt=today();data.notes=[];db.clients.unshift(data);
 audit(session.user.name,'created client',data.id+' '+data.company,'','');notify('New client: '+data.company,'client');saveDB();toast('Client created');closeModal();location.hash='#/client/'+data.id;render()}
 }
-function deleteClient(id){
+async function deleteClient(id){
 if(!['Founder','CEO','Admin'].includes(session.user.role)){toast('You do not have permission to delete clients','err');return}
 const c=db.clients.find(x=>x.id===id);if(!c)return;
 if(!confirm('Delete client '+c.company+'? This action cannot be undone.'))return;
-db.clients=db.clients.filter(x=>x.id!==id);db.users=db.users.filter(u=>u.clientId!==id);audit(session.user.name,'deleted client',id+' '+c.company,'','');saveDB();toast('Client and client login deleted');location.hash='#/clients';render();
+const portalUser=db.users.find(u=>u.role==='Client'&&String(u.clientId)===String(id));
+if(portalUser){
+ try{await apiRequest('/api/clients/'+encodeURIComponent(id)+'/portal-access',{method:'DELETE'})}
+ catch(e){toast(e.message||'Could not delete client portal login','err');return}
 }
+db.clients=db.clients.filter(x=>String(x.id)!==String(id));db.users=db.users.filter(u=>String(u.clientId)!==String(id));audit(session.user.name,'deleted client',id+' '+c.company,'','');saveDB();toast('Client and any linked portal login deleted');location.hash='#/clients';render();
+}
+function clientPortalAccessForm(id){
+ const c=db.clients.find(x=>String(x.id)===String(id));
+ if(!c){toast('Client not found','err');return}
+ if(!['Founder','CEO','Admin'].includes(session.user&&session.user.role)){toast('Only Founder, CEO or Admin can manage client portal access','err');return}
+ const linked=db.users.find(u=>u.role==='Client'&&String(u.clientId)===String(id));
+ const body='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" class="formgrid">'+
+ f('Client name*','','<input class="input" id="cpf-name" value="'+esc(linked?.name||c.contact||c.company)+'" autocomplete="name">')+
+ f('Login email*','','<input class="input" id="cpf-email" type="email" value="'+esc(linked?.email||c.email||'')+'" autocomplete="email">')+
+ f('New password*','','<input class="input" id="cpf-password" type="password" minlength="14" autocomplete="new-password" placeholder="At least 14 characters">')+
+ f('Phone','','<input class="input" id="cpf-phone" type="tel" value="'+esc(c.phone||'')+'">')+
+ '</div><div class="muted" style="font-size:11px;margin-top:10px;line-height:1.5">The client uses the same sign-in page as staff, then lands in their own client portal. Passwords are stored as hashes, not in the dashboard.</div>';
+ openModal(linked?'Reset Client Portal Login':'Enable Client Portal Login',body,'<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveClientPortalAccess(\''+esc(id)+'\')">'+(linked?'Update Login':'Create Login')+'</button>',true);
+}
+async function saveClientPortalAccess(id){
+ const g=x=>($('#cpf-'+x)?.value||'').trim();
+ const name=g('name'),email=g('email').toLowerCase(),password=g('password'),phone=g('phone');
+ if(!name||!email){toast('Client name and login email are required','err');return}
+ if(password.length<14){toast('Portal password must be at least 14 characters','err');return}
+ const primary=$('#modalRoot .modal .btn-primary');
+ if(primary){primary.disabled=true;primary.style.opacity='.65'}
+ let account;
+ try{
+  account=await apiRequest('/api/clients/'+encodeURIComponent(id)+'/portal-access',{method:'POST',body:JSON.stringify({name,email,password,phone})});
+ }catch(e){
+  if(primary){primary.disabled=false;primary.style.opacity=''}
+  toast(e.message||'Could not create client portal login','err');return;
+ }
+ const previous=db.users.find(u=>u.role==='Client'&&String(u.clientId)===String(id))||{};
+ const profile={...previous,id:String(account.id),authId:Number(account.id),name:account.name,email:account.email,role:'Client',dept:'Client',phone:account.phone||phone,skills:[],joined:previous.joined||today(),clientId:String(id)};
+ db.users=db.users.filter(u=>!(u.role==='Client'&&String(u.clientId)===String(id))&&String(u.authId)!==String(account.id)&&String(u.id)!==String(account.id));
+ db.users.push(profile);
+ audit(session.user.name,previous.authId?'reset client portal login':'created client portal login',name,previous.email||'',email);
+ saveDB();closeModal();toast(previous.authId?'Client portal login updated':'Client portal login enabled');render();
+}
+
 function renderClientProfile(id){
 const c=db.clients.find(x=>x.id===id);if(!c)return '<div class="empty">Client not found</div>';
 const h=clientHealth(c);
@@ -859,6 +899,10 @@ const quotes=db.quotations.filter(q=>q.clientId===id);
 const rev=sum(pays.map(p=>p.amount));
 const tabs=[['Overview','#ov'],['Projects ('+projs.length+')','#pj'],['Invoices ('+invs.length+')','#in'],['Payments ('+pays.length+')','#pa'],['Quotations ('+quotes.length+')','#qt'],['Tickets ('+tks.length+')','#ti'],['Documents ('+docs.length+')','#dc'],['Meetings ('+meets.length+')','#mt'],['Messages ('+msgs.length+')','#ms'],['Notes','#nt'],['Activity','#ac']];
 let out='<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:16px"><div style="display:flex;gap:14px;align-items:center">'+avatar(c.company,46)+'<div><div style="font-size:20px;font-weight:800">'+esc(c.company)+'</div><div class="muted" style="font-size:12.5px">'+esc(c.industry)+' · '+esc(c.address)+' · since '+fmtD(c.createdAt)+'</div></div></div><div style="display:flex;gap:8px">'+stBadge(c.status,CLIENT_ST_COLORS)+'<button class="btn btn-ghost btn-sm" onclick="clientForm(\''+id+'\')">'+ic('edit',13)+' Edit</button>'+(session.user.role==='Founder'||session.user.role==='CEO'||session.user.role==='Admin'?' <button class="btn btn-danger btn-sm" onclick="deleteClient(\''+id+'\')">'+ic('trash',13)+' Delete</button>':'')+'</div></div>';
+const portalUser=db.users.find(u=>u.role==='Client'&&String(u.clientId)===String(id));
+if(['Founder','CEO','Admin'].includes(session.user&&session.user.role)){
+ out+='<div class="card" style="padding:14px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><b style="font-size:13px">Client Portal Login</b><div class="muted" style="font-size:11.5px;margin-top:4px">'+(portalUser?'Enabled · '+esc(portalUser.email):'Not enabled for this client')+'</div></div><button class="btn btn-primary btn-sm" onclick="clientPortalAccessForm(\''+esc(id)+'\')">'+(portalUser?'Reset Login':'Enable Portal Access')+'</button></div>';
+}
 out+='<div class="card" style="padding:16px;margin-bottom:16px;background:linear-gradient(135deg,rgba(99,102,241,.06),rgba(139,92,246,.06))"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><b style="font-size:13.5px">🤖 AI Client Insight — Health Score '+h.s+'/100 '+badge(h.st[0],h.stb)+'</b><span class="muted" style="font-size:11px">auto-computed</span></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:12px" class="dashgrid3">'+
 '<div><div style="font-weight:700;font-size:12px;color:#ef4444;margin-bottom:6px">Risks</div>'+(h.risks.length?h.risks.map(r=>'<div style="font-size:11.5px;padding:4px 0">• '+esc(r)+'</div>').join(''):'<div class="muted" style="font-size:11.5px">None detected</div>')+'</div>'+
 '<div><div style="font-weight:700;font-size:12px;color:#10b981;margin-bottom:6px">Opportunities</div>'+(h.opps.length?h.opps.map(r=>'<div style="font-size:11.5px;padding:4px 0">• '+esc(r)+'</div>').join(''):'<div class="muted" style="font-size:11.5px">None yet</div>')+'</div>'+
