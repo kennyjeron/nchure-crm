@@ -420,9 +420,10 @@ function isWorkerRole(role){return WORKER_ROLES.has(String(role||''));}
 function can(mod){
  const role=session.user&&session.user.role;
  if(!role||role==='Client')return false;
+ if(role==='Founder'||role==='CEO')return true;
  if(role==='CTO'||role==='COO')return EXECUTIVE_NAV_MODS.has(mod);
  if(role==='Team Leader')return TEAM_LEADER_NAV_MODS.has(mod);
- if(['Founder','CEO','Admin'].includes(role))return !!(PERM[mod]&&PERM[mod].includes(role));
+ if(role==='Admin')return !!(PERM[mod]&&PERM[mod].includes(role));
  const dept=roleDepartment(role);
  const access=new Set(DEPT_NAV_ACCESS[dept]||WORKER_NAV_MODS);
  if(['Manager','Team Lead','VP','Executive'].includes(roleLevel(role))&&mod==='analytics')return true;
@@ -1335,6 +1336,7 @@ async function saveUser(id){
  const name=g('name'), email=g('email').toLowerCase(), role=g('role'), password=g('password');
  if(!name||!email){toast('Name and email required','err');return}
  if(!role||!allowedRoles.includes(role)){toast('You cannot assign that role','err');return}
+ const isSelf=!!u&&String(u.authId??u.id)===String(session.user?.id);
  if(isCEO()&&role==='Founder'){toast('CEO cannot create or assign a Founder account','err');return}
  if((!hasAccount||password)&&password.length<14){toast('Password must be at least 14 characters','err');return}
  if(id&&u?.role==='Founder'&&session.user?.role!=='Founder'){toast('Only Founder can edit the Founder profile','err');return}
@@ -2100,7 +2102,7 @@ const body='<div style="font-size:21px;font-weight:800;margin-bottom:16px">Setti
 '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+s.services.map(x=>'<span class="tag">'+esc(x)+'</span>').join('')+'</div></div>'+
 '<div class="card" style="padding:16px"><b style="font-size:13.5px">Financial Settings</b>'+
 row('Tax Rate (GST)',s.taxRate+'%')+row('Currency',esc(s.currency))+row('Invoice Prefix',esc(s.invoicePrefix))+row('Quotation Prefix',esc(s.quotPrefix))+
-'<div style="margin-top:12px"><b style="font-size:12.5px">Change Admin Password</b><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px" class="formgrid"><input class="input" id="cp-old" type="password" placeholder="Current"><input class="input" id="cp-new" type="password" placeholder="New (min 14 characters)"></div><button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="settingsChangePass()">Update</button></div></div>'+
+(isCEO()?'':'<div style="margin-top:12px"><b style="font-size:12.5px">Change Password</b><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px" class="formgrid"><input class="input" id="cp-old" type="password" placeholder="Current"><input class="input" id="cp-new" type="password" placeholder="New (min 14 characters)"></div><button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="settingsChangePass()">Update</button></div>')+'</div>'+
 '<div class="card" style="padding:16px"><b style="font-size:13.5px">Users & Roles ('+db.users.length+')</b>'+
 db.users.map(u=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">'+avatar(u.name,26)+'<span style="flex:1;margin-left:8px">'+esc(u.name)+'</span>'+badge(u.role,'b-violet')+'</div>').join('')+'</div>'+
 '<div class="card" style="padding:16px"><b style="font-size:13.5px">Backup & Data</b>'+
