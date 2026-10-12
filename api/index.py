@@ -579,6 +579,13 @@ def _worker_state(state, user):
         client_id = _id_of(row, "clientId", "client_id")
         if client_id is not None:
             client_ids.add(str(client_id))
+    # Sales and finance teams need the client selector even before their first
+    # quotation or invoice exists; access remains limited to these departments.
+    if role in SALES_DATA_ROLES or role in FINANCE_DATA_ROLES:
+        client_ids.update(
+            str(_id_of(row, "id")) for row in _as_list(state.get("clients"))
+            if isinstance(row, dict) and _id_of(row, "id") is not None
+        )
     for row in quotations + invoices + payments + expenses:
         client_id = _id_of(row, "clientId", "client_id")
         if client_id is not None:
