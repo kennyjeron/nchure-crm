@@ -1315,7 +1315,7 @@ function userForm(id){
  (hideOwnPassword?'':f(passwordLabel,'','<input class="input" id="uf-password" type="password" autocomplete="new-password" '+(!hasAccount?'required':'')+' minlength="14" placeholder="'+(hasAccount?'Leave blank to keep current password':'Minimum 14 characters')+'">'))+
  '<div><label class="muted" style="font-size:11px;font-weight:600">Role*</label><select class="input" id="uf-role" required '+(isSelf?'disabled':'')+' onchange="syncRoleOrgFields()">'+roleOptionsHtml(allowedRoles,defaultRole)+'</select></div>'+
  '<div><label class="muted" style="font-size:11px;font-weight:600">Department</label><input class="input" id="uf-dept" readonly value="'+esc(u?.dept||roleDepartment(defaultRole))+'"></div>'+
- '<div><label class="muted" style="font-size:11px;font-weight:600">Reports To</label><select class="input" id="uf-reports-to">'+reportingOptionsHtml(defaultRole,u?.id,u?.reportsTo)+'</select><div class="muted" style="font-size:10.5px;margin-top:4px">Required for every role except Founder. Create managers/team leads before their direct reports.</div></div>'+
+ '<div><label class="muted" style="font-size:11px;font-weight:600">Reports To</label><select class="input" id="uf-reports-to">'+reportingOptionsHtml(defaultRole,u?.id,u?.reportsTo)+'</select><div class="muted" style="font-size:10.5px;margin-top:4px">Optional. You can assign or change the reporting manager later.</div></div>'+
  f('Phone','','<input class="input" id="uf-phone" type="tel" autocomplete="tel" placeholder="+91…" value="'+esc(u?.phone||'')+'">')+
  f('Skills (comma separated)','','<input class="input" id="uf-skills" placeholder="Leadership, Strategy" value="'+esc((u?.skills||[]).join(', '))+'">')+
  f('Joining Date','','<input class="input" id="uf-joined" type="date" value="'+esc(u?.joined||today())+'">')+'</div>'+
@@ -1334,9 +1334,10 @@ async function saveUser(id){
  if((!hasAccount||password)&&password.length<14){toast('Password must be at least 14 characters','err');return}
  if(id&&u?.role==='Founder'&&session.user?.role!=='Founder'){toast('Only Founder can edit the Founder profile','err');return}
  const reportingId=g('reports-to');
- const reportingUser=reportingId?db.users.find(x=>String(x.id)===String(reportingId)):null;
- if(reportingId&&(!reportingUser||!allowedSupervisorRoles(role).includes(reportingUser.role))){toast('Choose a valid reporting manager for this role','err');return}
- if(role!=='Founder'&&!reportingId){toast('Assign a reporting manager before saving. Create the manager or team lead account first.','err');return}
+ const reportingCandidate=reportingId?db.users.find(x=>String(x.id)===String(reportingId)):null;
+ // Reporting lines are optional. Ignore stale or mismatched selections instead
+ // of blocking account creation or updates with a validation toast.
+ const reportingUser=reportingCandidate&&allowedSupervisorRoles(role).includes(reportingCandidate.role)?reportingCandidate:null;
  const duplicate=db.users.find(x=>String(x.email||'').toLowerCase()===email&&String(x.id)!==String(id||''));
  if(duplicate){toast('Email already exists in this workspace','err');return}
  const primary=$('#modalRoot .modal .btn-primary');
