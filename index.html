@@ -1303,7 +1303,7 @@ function userForm(id){
  f('Skills (comma separated)','','<input class="input" id="uf-skills" placeholder="Leadership, Strategy" value="'+esc((u?.skills||[]).join(', '))+'">')+
  f('Joining Date','','<input class="input" id="uf-joined" type="date" value="'+esc(u?.joined||today())+'">')+'</div>'+
  '<div class="muted" style="font-size:11px;margin-top:10px;line-height:1.5">'+esc(passwordHelp)+' Passwords are stored as secure hashes and are never saved in the dashboard profile.</div>';
- openModal(u?'Edit Team Member':'Add Team Member',body,'<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveUser(\\''+(id||'')+'\\')">'+(u?'Save Changes':'Create Account')+'</button>',true);
+ openModal(u?'Edit Team Member':'Add Team Member',body,'<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" data-id="'+esc(id||'')+'" onclick="saveUser(this.dataset.id)">'+(u?'Save Changes':'Create Account')+'</button>',true);
 }
 
 async function saveUser(id){
