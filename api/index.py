@@ -129,6 +129,13 @@ class TeamMemberUpdate(BaseModel):
     password: str | None = None
 
 
+class ClientPortalAccountCreate(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    phone: str | None = None
+
+
 TEAM_ROLES = {
     "Founder", "CEO", "CTO", "COO", "Admin", "Team Leader",
     "Sales Manager", "Sales Executive", "Project Manager", "Developer",
@@ -833,6 +840,190 @@ def put_app_state(body: dict[str, Any], user=Depends(current)):
             (Jsonb(new_state), user["sub"]),
         )
     return {"ok": True}
+
+
+@app.post("/api/clients/{client_id}/portal-access")
+def create_or_reset_client_portal_access(client_id: str, body: ClientPortalAccountCreate, user=Depends(current)):
+    if user.get("role") not in TEAM_MANAGERS:
+        raise HTTPException(403, "Only Founder, CEO or Admin can manage client portal access.")
+    name = body.name.strip()
+    email = str(body.email).strip().lower()
+    if not name:
+        raise HTTPException(400, "Client portal name is required.")
+    if len(body.password) < 14:
+        raise HTTPException(400, "Portal password must be at least 14 characters.")
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT state FROM public.crm_dashboard_state WHERE id=1 FOR UPDATE"
+        ).fetchone()
+        state_value = row[0] if row and isinstance(row[0], dict) else {}
+        clients = _as_list(state_value.get("clients"))
+        client = next(
+            (item for item in clients if isinstance(item, dict) and str(item.get("id")) == str(client_id)),
+            None,
+        )
+        if not client:
+            raise HTTPException(404, "Client record not found.")
+
+        profiles = _as_list(state_value.get("users"))
+        linked = next(
+            (
+                item for item in profiles
+                if isinstance(item, dict)
+                and str(item.get("clientId", "")) == str(client_id)
+                and item.get("role") == "Client"
+            ),
+            None,
+        )
+        account_id = None
+        if linked:
+            link_id = linked.get("authId", linked.get("id"))
+            if str(link_id or "").isdigit():
+                db_account = conn.execute(
+                    "SELECT id,role,is_active FROM public.crm_users WHERE id=%s",
+                    (int(link_id),),
+                ).fetchone()
+                if db_account:
+                    if db_account[1] != "Client":
+                        raise HTTPException(409, "The linked account is not a client portal account.")
+                    account_id = int(db_account[0])
+
+        email_account = conn.execute(
+            "SELECT id,role,is_active FROM public.crm_users WHERE lower(email)=lower(%s)",
+            (email,),
+        ).fetchone()
+        if email_account and (account_id is None or int(email_account[0]) != account_id):
+            if email_account[2]:
+                raise HTTPException(409, "This email is already used by another active account.")
+            if email_account[1] != "Client":
+                raise HTTPException(409, "This email belongs to a disabled non-client account.")
+            other_link = next(
+                (
+                    item for item in profiles
+                    if isinstance(item, dict)
+                    and item.get("role") == "Client"
+                    and str(item.get("authId", item.get("id", ""))) == str(email_account[0])
+                    and str(item.get("clientId", "")) != str(client_id)
+                ),
+                None,
+            )
+            if other_link:
+                raise HTTPException(409, "This email is linked to another client.")
+            account_id = int(email_account[0])
+
+        if account_id is None:
+            account = conn.execute(
+                "INSERT INTO public.crm_users(name,email,password_hash,role,is_active) "
+                "VALUES (%s,%s,%s,'Client',true) RETURNING id,name,email,role,is_active",
+                (name, email, hashpw(body.password)),
+            ).fetchone()
+        else:
+            account = conn.execute(
+                "UPDATE public.crm_users SET name=%s,email=%s,password_hash=%s,role='Client',is_active=true "
+                "WHERE id=%s RETURNING id,name,email,role,is_active",
+                (name, email, hashpw(body.password), account_id),
+            ).fetchone()
+
+        profile = {
+            **(linked if isinstance(linked, dict) else {}),
+            "id": str(account[0]),
+            "authId": int(account[0]),
+            "name": account[1],
+            "email": account[2],
+            "role": "Client",
+            "dept": "Client",
+            "phone": (body.phone or client.get("phone") or "").strip(),
+            "skills": [],
+            "joined": (linked or {}).get("joined") or datetime.now(timezone.utc).date().isoformat(),
+            "clientId": str(client_id),
+        }
+        next_users = [
+            item for item in profiles
+            if not (
+                isinstance(item, dict)
+                and (
+                    (item.get("role") == "Client" and str(item.get("clientId", "")) == str(client_id))
+                    or str(item.get("authId", item.get("id", ""))) == str(account[0])
+                )
+            )
+        ]
+        next_users.append(profile)
+        state_value = dict(state_value)
+        state_value["users"] = next_users
+        conn.execute(
+            """
+            INSERT INTO public.crm_dashboard_state (id,state,updated_by,updated_at)
+            VALUES (1,%s,%s,now())
+            ON CONFLICT (id) DO UPDATE
+            SET state=EXCLUDED.state,updated_by=EXCLUDED.updated_by,updated_at=now()
+            """,
+            (Jsonb(state_value), user["sub"]),
+        )
+
+    return {
+        "id": int(account[0]),
+        "name": account[1],
+        "email": account[2],
+        "role": "Client",
+        "is_active": True,
+        "client_id": str(client_id),
+    }
+
+
+@app.delete("/api/clients/{client_id}/portal-access")
+def delete_client_portal_access(client_id: str, user=Depends(current)):
+    if user.get("role") not in TEAM_MANAGERS:
+        raise HTTPException(403, "Only Founder, CEO or Admin can manage client portal access.")
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT state FROM public.crm_dashboard_state WHERE id=1 FOR UPDATE"
+        ).fetchone()
+        state_value = row[0] if row and isinstance(row[0], dict) else {}
+        profiles = _as_list(state_value.get("users"))
+        linked_ids = {
+            str(item.get("authId", item.get("id", "")))
+            for item in profiles
+            if isinstance(item, dict)
+            and item.get("role") == "Client"
+            and str(item.get("clientId", "")) == str(client_id)
+            and str(item.get("authId", item.get("id", ""))).isdigit()
+        }
+        deleted = 0
+        for linked_id in linked_ids:
+            account = conn.execute(
+                "SELECT id,role FROM public.crm_users WHERE id=%s",
+                (int(linked_id),),
+            ).fetchone()
+            if account and account[1] == "Client":
+                conn.execute(
+                    "UPDATE public.crm_dashboard_state SET updated_by=NULL WHERE updated_by=%s",
+                    (int(linked_id),),
+                )
+                conn.execute("DELETE FROM public.crm_users WHERE id=%s", (int(linked_id),))
+                deleted += 1
+
+        next_users = [
+            item for item in profiles
+            if not (
+                isinstance(item, dict)
+                and item.get("role") == "Client"
+                and str(item.get("clientId", "")) == str(client_id)
+            )
+        ]
+        state_value = dict(state_value)
+        state_value["users"] = next_users
+        conn.execute(
+            """
+            INSERT INTO public.crm_dashboard_state (id,state,updated_by,updated_at)
+            VALUES (1,%s,%s,now())
+            ON CONFLICT (id) DO UPDATE
+            SET state=EXCLUDED.state,updated_by=EXCLUDED.updated_by,updated_at=now()
+            """,
+            (Jsonb(state_value), user["sub"]),
+        )
+    return {"ok": True, "deleted_accounts": deleted}
 
 
 @app.get("/api/state")
