@@ -1382,10 +1382,11 @@ async function deleteUser(id){
 // ============ QUOTATIONS ============
 function renderQuotations(){
 const rows=db.quotations.map(q=>{
-return '<tr style="cursor:pointer" onclick="quotDetail(\''+q.id+'\')"><td><b>'+esc(q.no)+'</b></td><td>'+esc(clientName(q.clientId))+'</td><td>'+q.items.length+' items</td><td><b>'+money(q.total)+'</b></td><td>'+fmtD(q.expiry)+'</td><td>'+stBadge(q.status,QUOT_COLORS)+'</td><td><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();printQuot(\''+q.id+'\')">PDF</button>'+(q.status==='Sent'||q.status==='Viewed'?'<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();markQuot(\''+q.id+'\',\'Accepted\')">Mark Accepted</button>':'')+'</div></td></tr>'}).join('');
+return '<tr style="cursor:pointer" onclick="quotDetail(\''+q.id+'\')"><td><b>'+esc(q.no)+'</b></td><td>'+esc(clientName(q.clientId))+'</td><td>'+q.items.length+' items</td><td><b>'+money(q.total)+'</b></td><td>'+fmtD(q.expiry)+'</td><td>'+stBadge(q.status,QUOT_COLORS)+'</td><td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();printQuot(\''+q.id+'\')">PDF</button>'+(q.status==='Sent'||q.status==='Viewed'?'<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();markQuot(\''+q.id+'\',\'Accepted\')">Mark Accepted</button>':'')+(can('quotations')?'<button class="btn btn-danger btn-sm" data-id="'+esc(q.id)+'" onclick="event.stopPropagation();deleteQuotation(this.dataset.id)">Delete</button>':'')+'</div></td></tr>'}).join('');
 return '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px"><div><div style="font-size:21px;font-weight:800">Quotations</div><div class="muted" style="font-size:12.5px">Accepting a quotation auto-creates the project + invoice</div></div><button class="btn btn-primary" onclick="quotForm()">'+ic('plus',14)+' New Quotation</button></div>'+
 '<div class="card" style="overflow:auto"><table><thead><tr><th>No.</th><th>Client</th><th>Items</th><th>Total</th><th>Expiry</th><th>Status</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="7"><div class="empty">No quotations yet.<div style="margin-top:8px"><button class="btn btn-primary btn-sm" onclick="quotForm()">Create Quotation</button></div></div></td></tr>')+'</tbody></table></div>';
 }
+
 function quotForm(id){
 const q=id?db.quotations.find(x=>x.id===id):null;
 window.__qItems=q?JSON.parse(JSON.stringify(q.items)):[{desc:db.settings.services[0],qty:1,price:50000}];
@@ -1431,6 +1432,17 @@ db.quotations.unshift(data);audit(session.user.name,'created quotation',data.no,
 }
 saveDB();closeModal();render();
 }
+function deleteQuotation(id){
+ if(!can('quotations')){toast('You do not have permission to delete quotations','err');return}
+ const q=db.quotations.find(x=>String(x.id)===String(id));if(!q)return;
+ const warning=q.status==='Accepted'||q.status==='Won'?' The project or invoice created from an accepted quotation will remain in the system.':'';
+ confirmBox('Permanently delete quotation '+(q.no||q.id)+'?'+warning,()=>{
+  db.quotations=db.quotations.filter(x=>String(x.id)!==String(id));
+  audit(session.user.name,'deleted quotation',q.no||q.id,q.status||'','Deleted');
+  saveDB();closeModal();toast('Quotation deleted');render();
+ });
+}
+
 function quotDetail(id){
 const q=db.quotations.find(x=>x.id===id);if(!q)return;
 const body='<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px"><div><b style="font-size:15px">'+esc(q.no)+'</b><div class="muted" style="font-size:12px">'+esc(clientName(q.clientId))+' · expiry '+fmtD(q.expiry)+'</div></div>'+stBadge(q.status,QUOT_COLORS)+'</div>'+
@@ -1486,11 +1498,25 @@ else if(i.dueDate<today())i.status='Overdue';
 function renderInvoices(){
 refreshInvoiceStatuses();
 const rows=db.invoices.map(i=>{
-return '<tr><td><b>'+esc(i.no)+'</b></td><td>'+esc(clientName(i.clientId))+'</td><td>'+esc(projName(i.projectId))+'</td><td>'+fmtD(i.date)+'</td><td>'+fmtD(i.dueDate)+'</td><td><b>'+money(i.total)+'</b></td><td>'+money(i.paid)+'</td><td>'+stBadge(i.status,INV_COLORS)+'</td><td><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="printInvoice(\''+i.id+'\')">PDF</button>'+(i.status!=='Paid'&&i.status!=='Cancelled'?'<button class="btn btn-primary btn-sm" onclick="payForm(\''+i.id+'\')">Record Payment</button>':'')+'</div></td></tr>'}).join('');
+return '<tr><td><b>'+esc(i.no)+'</b></td><td>'+esc(clientName(i.clientId))+'</td><td>'+esc(projName(i.projectId))+'</td><td>'+fmtD(i.date)+'</td><td>'+fmtD(i.dueDate)+'</td><td><b>'+money(i.total)+'</b></td><td>'+money(i.paid)+'</td><td>'+stBadge(i.status,INV_COLORS)+'</td><td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="printInvoice(\''+i.id+'\')">PDF</button>'+(i.status!=='Paid'&&i.status!=='Cancelled'?'<button class="btn btn-primary btn-sm" onclick="payForm(\''+i.id+'\')">Record Payment</button>':'')+(can('invoices')?'<button class="btn btn-danger btn-sm" data-id="'+esc(i.id)+'" onclick="deleteInvoice(this.dataset.id)">Delete</button>':'')+'</div></td></tr>'}).join('');
 const totalOut=sum(db.invoices.filter(i=>!['Paid','Draft','Cancelled'].includes(i.status)).map(i=>i.total-i.paid));
 return '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px"><div><div style="font-size:21px;font-weight:800">Invoices</div><div class="muted" style="font-size:12.5px">Outstanding: <b>'+money(totalOut)+'</b> · overdue invoices alert the accountant automatically</div></div><button class="btn btn-primary" onclick="invoiceForm()">'+ic('plus',14)+' New Invoice</button></div>'+
 '<div class="card" style="overflow:auto"><table><thead><tr><th>No.</th><th>Client</th><th>Project</th><th>Date</th><th>Due</th><th>Total</th><th>Paid</th><th>Status</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="9"><div class="empty">No invoices yet</div></td></tr>')+'</tbody></table></div>';
 }
+
+function deleteInvoice(id){
+ if(!can('invoices')){toast('You do not have permission to delete invoices','err');return}
+ const inv=db.invoices.find(x=>String(x.id)===String(id));if(!inv)return;
+ const linked=(db.payments||[]).filter(p=>String(p.invoiceId)===String(id));
+ const warning=linked.length?' This will also permanently delete '+linked.length+' linked payment record(s), affecting financial history.':'';
+ confirmBox('Permanently delete invoice '+(inv.no||inv.id)+'?'+warning,()=>{
+  db.invoices=db.invoices.filter(x=>String(x.id)!==String(id));
+  db.payments=(db.payments||[]).filter(p=>String(p.invoiceId)!==String(id));
+  audit(session.user.name,'deleted invoice',inv.no||inv.id,inv.status||'',linked.length+' payment record(s) deleted');
+  saveDB();closeModal();toast('Invoice and linked payment records deleted');render();
+ });
+}
+
 function invoiceForm(){
 openModal('New Invoice','<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px" class="formgrid">'+
 '<div><label class="muted" style="font-size:11px;font-weight:600">Client*</label><select class="input" id="if-client">'+db.clients.map(c=>'<option value="'+c.id+'">'+esc(c.company)+'</option>').join('')+'</select></div>'+
