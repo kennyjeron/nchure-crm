@@ -2006,7 +2006,7 @@ default:content=renderDashboard();
 if(active==='client'&&curRoute().split('/')[1]){content=renderClientProfile(curRoute().split('/')[1])}
 if(active==='project'&&curRoute().split('/')[1]){content=renderProjectDetail(curRoute().split('/')[1])}
 root.innerHTML=layoutShell(active,content);
-if(active==='dashboard')drawDashCharts();
+if(active==='dashboard'&&!isWorkerRole(role))drawDashCharts();
 if(active==='client')setTimeout(()=>clientTab(0),0);
 if(active==='ai'){const b=$('#aiChat');if(b)b.scrollTop=b.scrollHeight}
 }
