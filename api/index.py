@@ -137,9 +137,33 @@ class ClientPortalAccountCreate(BaseModel):
 
 
 TEAM_ROLES = {
-    "Founder", "CEO", "CTO", "COO", "Admin", "Team Leader",
-    "Sales Manager", "Sales Executive", "Project Manager", "Developer",
-    "Designer", "Content Team", "Accountant", "Support Executive", "Staff",
+    "Founder", "CEO", "CTO", "COO", "CFO", "CMO", "CHRO", "CPO", "CRO", "CIO", "CISO", "Admin",
+    "Executive Assistant",
+    "VP of Engineering", "Engineering Manager", "Engineering Team Lead", "Principal Engineer",
+    "Senior Software Engineer", "Software Engineer", "Junior Software Engineer", "Frontend Developer",
+    "Backend Developer", "Full Stack Developer", "Mobile App Developer", "DevOps Engineer", "Cloud Engineer",
+    "AI/ML Engineer", "Data Scientist", "Data Analyst", "Data Engineer", "Database Administrator",
+    "VP of Product", "Product Manager", "Product Team Lead", "Product Designer", "Design Manager",
+    "Design Team Lead", "Principal Designer", "Senior Designer", "UI/UX Designer", "Junior UI/UX Designer",
+    "Graphic Designer", "Brand Designer", "Motion Designer", "Junior Designer", "UX Researcher",
+    "QA Manager", "QA Team Lead", "Senior QA Engineer", "QA Engineer", "Automation Test Engineer", "Junior QA Engineer",
+    "VP of Sales", "Sales Manager", "Sales Team Lead", "Senior Sales Executive", "Sales Executive",
+    "Sales Development Representative", "Business Development Executive", "Account Executive", "Account Manager",
+    "Sales Operations Specialist",
+    "Marketing Manager", "Marketing Team Lead", "SEO Specialist", "Performance Marketing Specialist",
+    "Social Media Executive", "Content Strategist", "Senior Content Writer", "Content Writer", "Video Editor",
+    "Creative Producer", "Marketing Analyst",
+    "VP of Operations", "Operations Manager", "Operations Team Lead", "Project Manager", "Project Team Lead",
+    "Senior Project Coordinator", "Project Coordinator", "Business Analyst", "Business Operations Executive",
+    "Procurement Specialist",
+    "HR Manager", "HR Team Lead", "Talent Acquisition Specialist", "HR Executive", "HR Coordinator",
+    "Learning & Development Specialist",
+    "Finance Manager", "Finance Team Lead", "Senior Accountant", "Accountant", "Finance Analyst",
+    "Payroll Specialist", "Legal & Compliance Manager", "Legal Executive", "Compliance Analyst",
+    "Customer Success Manager", "Customer Success Team Lead", "Customer Success Executive", "Support Manager",
+    "Support Team Lead", "Senior Support Executive", "Support Executive", "Technical Support Engineer",
+    "IT Manager", "IT Team Lead", "System Administrator", "IT Support Engineer", "Security Manager",
+    "Security Team Lead", "Security Analyst", "Team Leader", "Intern", "Staff",
 }
 ELEVATED_TEAM_ROLES = {"Founder", "CEO", "CTO", "COO", "Admin", "Team Leader"}
 TEAM_MANAGERS = {"Founder", "CEO", "Admin"}
@@ -351,6 +375,11 @@ def delete_team_member(member_id: int, user=Depends(current)):
     return {"ok": True, "id": member_id, "deleted": True}
 
 
+def _can_schedule_meetings(role):
+    role = str(role or "")
+    return role in {"Founder", "CEO", "Admin", "CTO", "COO", "Team Leader"} or role.endswith("Team Lead")
+
+
 def _as_list(value):
     return value if isinstance(value, list) else []
 
@@ -405,7 +434,7 @@ def _id_of(record, *fields):
 
 def _safe_profile(profile, user):
     profile = profile if isinstance(profile, dict) else {}
-    allowed = ("id", "authId", "name", "email", "role", "dept", "phone", "skills", "joined", "clientId")
+    allowed = ("id", "authId", "name", "email", "role", "dept", "phone", "skills", "joined", "clientId", "reportsTo", "reportsToName")
     result = {key: profile[key] for key in allowed if key in profile}
     result.setdefault("id", str(user.get("sub", "")))
     result.setdefault("authId", int(user["sub"]) if str(user.get("sub", "")).isdigit() else None)
@@ -760,7 +789,8 @@ def _merge_limited_state(full_state, incoming, user):
     )
     if "meetings" in incoming:
         state["meetings"] = _owned_merge(
-            state.get("meetings"), incoming.get("meetings"), own_meeting, True,
+            state.get("meetings"), incoming.get("meetings"), own_meeting,
+            _can_schedule_meetings(user.get("role")),
             ["title", "date", "time", "participants", "link", "agenda", "notes", "actions"]
         )
     own_ticket = lambda row: (
