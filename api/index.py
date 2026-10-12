@@ -175,7 +175,7 @@ SALES_DATA_ROLES = {
     "Account Executive", "Account Manager", "Sales Operations Specialist", "CMO",
     "Marketing Manager", "Marketing Team Lead", "SEO Specialist", "Performance Marketing Specialist",
     "Social Media Executive", "Content Strategist", "Senior Content Writer", "Content Writer",
-    "Video Editor", "Creative Producer", "Marketing Analyst",
+    "Video Editor", "Creative Producer", "Marketing Analyst", "Content Team",
 }
 SALES_LEAD_MANAGER_ROLES = {
     "CRO", "VP of Sales", "Sales Manager", "Sales Team Lead", "CMO",
