@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, MoveUpRight } from "lucide-react";
+import { ArrowDownRight, MoveUpRight } from "lucide-react";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import PCBScene from "./PCBScene";
