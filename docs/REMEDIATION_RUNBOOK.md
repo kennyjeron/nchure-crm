@@ -59,3 +59,19 @@ This migration is NOT approved for production execution. Inspect existing schema
 - Concurrent update and save-failure tests pass.
 - Backup restore drill succeeds.
 - Production deployment only after explicit owner approval.
+
+## Vercel environment metadata review
+
+Variable names were inspected with decryption disabled. No secret values were requested or copied.
+
+- DATABASE_URL, JWT_SECRET, INITIAL_ADMIN_EMAIL, INITIAL_ADMIN_PASSWORD, and INITIAL_ADMIN_NAME are configured for Production and Preview.
+- The current API reads DATABASE_URL and JWT_SECRET. It does not read INITIAL_ADMIN_*.
+- Vercel metadata flags INITIAL_ADMIN_PASSWORD and JWT_SECRET with a readable-secret security issue. Review the Vercel security details. Do not rotate or delete variables until impact and active usage are confirmed; any production secret rotation requires explicit approval.
+- Remove unused INITIAL_ADMIN_* variables only after confirming no other deployment or workflow depends on them.
+
+## Work prepared
+
+- Draft PR: https://github.com/kennyjeron/nchure-crm/pull/2
+- Branch: repair/phase-1-safe-db-foundation
+- The PR contains a proposed migration, a remediation runbook, and corrected README instructions.
+- PR is draft and unmerged. No production deployment was triggered.
