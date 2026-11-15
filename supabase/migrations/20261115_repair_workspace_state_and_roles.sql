@@ -1,7 +1,6 @@
 -- NCHURE CRM workspace state compatibility repair.
--- SAFE TO REVIEW: this migration is intentionally NOT applied automatically.
--- Run only after the Supabase project is reachable, a verified backup exists,
--- and the live schema has been inspected against the existing database.
+-- REVIEW ONLY: do not apply until Supabase is ACTIVE, a verified backup exists,
+-- and the live schema has been inspected.
 
 BEGIN;
 
@@ -12,10 +11,18 @@ CREATE TABLE IF NOT EXISTS public.crm_dashboard_state (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Make the expected non-key columns explicit for a pre-existing partial table.
+ALTER TABLE public.crm_dashboard_state
+    ADD COLUMN IF NOT EXISTS state jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.crm_dashboard_state
+    ADD COLUMN IF NOT EXISTS updated_by bigint NULL;
+ALTER TABLE public.crm_dashboard_state
+    ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
 DO $$
 BEGIN
     IF to_regclass('public.crm_users') IS NULL THEN
-        RAISE EXCEPTION 'public.crm_users is missing; apply and verify the base CRM migration first';
+        RAISE EXCEPTION 'public.crm_users is missing; verify the base CRM migration first';
     END IF;
 
     IF NOT EXISTS (
@@ -30,7 +37,8 @@ BEGIN
     END IF;
 END $$;
 
--- The original migration allowed eight roles; the API now supports many more.
+-- The original migration permitted eight roles, but the API supports a larger
+-- TEAM_ROLES set. API endpoints validate role names; the DB enforces non-empty.
 ALTER TABLE public.crm_users
     DROP CONSTRAINT IF EXISTS crm_users_role_check;
 ALTER TABLE public.crm_users
@@ -41,5 +49,5 @@ ALTER TABLE public.crm_users
 
 ALTER TABLE public.crm_dashboard_state ENABLE ROW LEVEL SECURITY;
 
--- Server-side PostgreSQL access only. Do not grant browser roles direct access.
+-- PostgreSQL access is server-side only. Do not grant browser roles direct access.
 COMMIT;
