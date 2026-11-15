@@ -11,7 +11,9 @@ CREATE TABLE IF NOT EXISTS public.crm_dashboard_state (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Make the expected non-key columns explicit for a pre-existing partial table.
+-- Complete expected columns if a partial table already exists.
+ALTER TABLE public.crm_dashboard_state
+    ADD COLUMN IF NOT EXISTS id smallint;
 ALTER TABLE public.crm_dashboard_state
     ADD COLUMN IF NOT EXISTS state jsonb NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE public.crm_dashboard_state
@@ -19,10 +21,32 @@ ALTER TABLE public.crm_dashboard_state
 ALTER TABLE public.crm_dashboard_state
     ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
 
+UPDATE public.crm_dashboard_state SET id = 1 WHERE id IS NULL;
+ALTER TABLE public.crm_dashboard_state ALTER COLUMN id SET DEFAULT 1;
+ALTER TABLE public.crm_dashboard_state ALTER COLUMN id SET NOT NULL;
+
 DO $$
 BEGIN
     IF to_regclass('public.crm_users') IS NULL THEN
         RAISE EXCEPTION 'public.crm_users is missing; verify the base CRM migration first';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'public.crm_dashboard_state'::regclass
+          AND contype = 'p'
+    ) THEN
+        ALTER TABLE public.crm_dashboard_state
+            ADD CONSTRAINT crm_dashboard_state_pkey PRIMARY KEY (id);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'crm_dashboard_state_id_check'
+          AND conrelid = 'public.crm_dashboard_state'::regclass
+    ) THEN
+        ALTER TABLE public.crm_dashboard_state
+            ADD CONSTRAINT crm_dashboard_state_id_check CHECK (id = 1);
     END IF;
 
     IF NOT EXISTS (
