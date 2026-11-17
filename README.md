@@ -40,3 +40,8 @@ The repository's Vercel configuration routes /api/* and /health to api/index.py 
 
 ## Known limitations
 The current UI is an early MVP. Tenant isolation and fine-grained permissions are not complete, so do not use it for confidential or real client data until these are implemented and tested.
+
+
+## Firebase Spark migration (separate branch)
+
+A proposed Spark-only migration scaffold is being prepared on the `migration/firebase-spark` branch. See [firebase/README.md](firebase/README.md) for its current status and cutover checklist. The current `main` branch and the Vercel + Supabase production path remain unchanged. The Firebase branch is not ready to deploy until the UI adapter and Security Rules tests are complete.
