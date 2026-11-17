@@ -13,11 +13,15 @@ This branch is a migration foundation, **not a live cutover**.
 - [x] Add a deny-by-default Firestore Security Rules baseline.
 - [x] Add the target Firestore schema and indexes.
 - [x] Add pinned modular Firebase Web SDK bootstrap and a config template.
+- [x] Register the NCHURE CRM Web App in the user's existing Spark project.
+- [x] Create the local, git-ignored Web SDK configuration for that project.
+- [x] Verify the project is on Spark and the Firestore database exists.
 - [ ] Implement the UI data adapter and remove calls to the FastAPI `/api/*` endpoints.
 - [ ] Add automated Firestore Rules tests and run them in the Emulator Suite.
 - [ ] Test role-based flows with Founder, team member and Client accounts.
 - [ ] Export and preserve local browser data; test import.
-- [ ] Create Firebase project and configure Authentication + Firestore.
+- [ ] Enable the Email/Password sign-in provider after the user confirms at action time.
+- [ ] Publish the tested Firestore rules and indexes to the existing database.
 - [ ] Deploy a preview to Firebase Hosting and verify all CRM workflows.
 - [ ] Approve production cutover separately.
 
@@ -36,9 +40,14 @@ must be replaced by Firebase client SDK calls and Firestore Rules.
 
 The current Supabase project returned 17 public tables with zero rows. It also
 returned zero rows in `auth.users`, `storage.objects` and `storage.buckets`.
-The Vercel project currently contains server-side environment variables, but none
-of them are copied into this branch. Do not copy any Vercel secrets to Firebase
-Hosting or the browser.
+There were no Supabase business records to copy during this inspection. The CRM
+also keeps workspace state in browser `localStorage`; that has not yet been
+exported or imported, so check the original user's browser before any cutover.
+The Firebase project currently has no Authentication users and its Firestore
+database is empty with default-deny rules. The Phone provider is already enabled
+in the console; this migration does not use it or change it. The Vercel project
+contains server-side environment variables, but none are copied into this
+branch. Do not copy any Vercel secrets to Firebase Hosting or the browser.
 
 ## Spark-only service boundaries
 
@@ -63,20 +72,23 @@ document reads/day, 20,000 writes/day, 20,000 deletes/day and 10 GiB outbound
 transfer/month. Hosting includes up to 10 GB stored content and up to 360 MB/day
 data transfer on Spark. Exceeding a Spark quota stops that product until quota resets or the project is upgraded. Monitor usage rather than assuming unlimited free usage.
 
-## One-time Firebase Console setup
+## Existing Firebase project setup
 
-Do this only after the UI adapter and Rules tests are ready.
+The Web App and Spark project checks below are complete. Finish the remaining
+steps only after the UI adapter and Rules tests are ready.
 
-1. Create a new Firebase project. Keep it on **Spark** and do not attach a billing account.
-2. Add a Web App and copy its public web config into a local copy of
-   `js/firebase-config.example.js` named `js/firebase-config.js`.
-3. In Authentication, enable Email/Password. Do not enable Phone Authentication.
-4. Create one Firestore Native mode database. Choose the nearest supported region
-   deliberately; the Firestore location cannot be changed after creation.
+1. Use the existing Firebase project `nchure-b7f65`; it is currently on **Spark**.
+   Do not attach a billing account or upgrade the plan.
+2. The NCHURE CRM Web App is registered. Its public web config is in the local,
+   git-ignored `js/firebase-config.js`; never commit that local file.
+3. In Authentication, enable Email/Password only after confirming. Do not enable
+   Phone Authentication or use SMS sign-in.
+4. The existing Firestore Native mode database is in `nam5`. Its location is
+   already fixed; do not create or replace the database.
 5. Publish `firebase/firestore.rules` and `firebase/firestore.indexes.json` only
    after Rules tests pass.
-6. Create the first Founder identity in Firebase Authentication, then create
-   `organizations/nchure/users/{AUTH_UID}` in Firestore Console with
+6. After the app adapter is ready, create the first Founder identity in Firebase
+   Authentication, then create `organizations/nchure/users/{AUTH_UID}` in Firestore Console with
    `role: "Founder"` and `active: true`. Console-created documents use trusted
    project-admin permissions. Never implement public self-registration as Founder.
 7. Team and Client accounts must be provisioned through the approved manager flow.
