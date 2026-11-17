@@ -18,6 +18,7 @@ This branch is a migration foundation, **not a live cutover**.
 - [x] Verify the project is on Spark and the Firestore database exists.
 - [ ] Implement the UI data adapter and remove calls to the FastAPI `/api/*` endpoints.
 - [ ] Add automated Firestore Rules tests and run them in the Emulator Suite.
+- [ ] Create the first Founder Firebase Auth account and profile (user sets the password).
 - [ ] Test role-based flows with Founder, team member and Client accounts.
 - [ ] Export and preserve local browser data; test import.
 - [x] Enable Firebase Authentication Email/Password sign-in.
@@ -44,10 +45,12 @@ There were no Supabase business records to copy during this inspection. The CRM
 also keeps workspace state in browser `localStorage`; that has not yet been
 exported or imported, so check the original user's browser before any cutover.
 The Firebase project currently has no Authentication users and its Firestore
-database is empty with default-deny rules. The Phone provider is already enabled
-in the console; this migration does not use it or change it. The Vercel project
-contains server-side environment variables, but none are copied into this
-branch. Do not copy any Vercel secrets to Firebase Hosting or the browser.
+database is empty with default-deny rules. Email/Password is enabled for CRM
+sign-in; Phone/SMS sign-in is disabled to keep the app within the Spark-only
+scope. The first Founder account still needs to be created with a password set
+by the user, then its profile must be added at the matching Auth UID. The Vercel
+project contains server-side environment variables, but none are copied into
+this branch. Do not copy any Vercel secrets to Firebase Hosting or the browser.
 
 ## Spark-only service boundaries
 
