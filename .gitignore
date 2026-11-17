@@ -8,3 +8,7 @@ venv/
 node_modules/
 .DS_Store
 uploads/
+
+# Firebase project config (public web config is generated locally)
+js/firebase-config.js
+.firebase/
