@@ -1,0 +1,30 @@
+{
+  "hosting": {
+    "public": "..",
+    "ignore": [
+      "firebase.json",
+      "firebase.json.example",
+      "**/.*",
+      "**/node_modules/**",
+      "api/**",
+      "supabase/**",
+      "firebase/**",
+      "requirements.txt",
+      "DEPLOYMENT.md",
+      "README.md",
+      ".env*"
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|css)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=300" }
+        ]
+      }
+    ]
+  },
+  "firestore": {
+    "rules": "firebase/firestore.rules",
+    "indexes": "firebase/firestore.indexes.json"
+  }
+}
