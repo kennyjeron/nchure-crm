@@ -38,36 +38,36 @@ beforeEach(async () => {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
     const seed = [
-      ["organizations", ORG, "users", "founder-uid", {
+      { path: ["organizations", ORG, "users", "founder-uid"], data: {
         name: "Founder", email: "founder@example.com", role: "Founder", active: true
-      }],
-      ["organizations", ORG, "users", "sales-uid", {
+      }},
+      { path: ["organizations", ORG, "users", "sales-uid"], data: {
         name: "Sales User", email: "sales@example.com", role: "Sales Executive", active: true
-      }],
-      ["organizations", ORG, "users", "client-uid", {
+      }},
+      { path: ["organizations", ORG, "users", "client-uid"], data: {
         name: "Client User", email: "client@example.com", role: "Client", active: true, clientId: "client-a"
-      }],
-      ["organizations", ORG, "users", "inactive-uid", {
+      }},
+      { path: ["organizations", ORG, "users", "inactive-uid"], data: {
         name: "Inactive User", email: "inactive@example.com", role: "Sales Executive", active: false
-      }],
-      ["organizations", ORG, "leads", "lead-owned", {
+      }},
+      { path: ["organizations", ORG, "leads", "lead-owned"], data: {
         name: "Assigned lead", assignedToUid: "sales-uid", createdAt: new Date()
-      }],
-      ["organizations", ORG, "leads", "lead-other", {
+      }},
+      { path: ["organizations", ORG, "leads", "lead-other"], data: {
         name: "Other lead", assignedToUid: "another-user", createdAt: new Date()
-      }],
-      ["organizations", ORG, "expenses", "expense-1", {
+      }},
+      { path: ["organizations", ORG, "expenses", "expense-1"], data: {
         title: "Private expense", amount: 1000, createdAt: new Date()
-      }],
-      ["organizations", ORG, "invoices", "invoice-a", {
+      }},
+      { path: ["organizations", ORG, "invoices", "invoice-a"], data: {
         number: "INV-A", clientId: "client-a", clientUid: "client-uid", createdAt: new Date()
-      }],
-      ["organizations", ORG, "invoices", "invoice-b", {
+      }},
+      { path: ["organizations", ORG, "invoices", "invoice-b"], data: {
         number: "INV-B", clientId: "client-b", clientUid: "another-client", createdAt: new Date()
-      }]
+      }}
     ];
-    for (const [ ...segments, data ] of seed) {
-      await setDoc(doc(db, path(...segments)), data);
+    for (const entry of seed) {
+      await setDoc(doc(db, path(...entry.path)), entry.data);
     }
   });
 });
