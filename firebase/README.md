@@ -60,8 +60,8 @@ Spark has no automatic pay-as-you-go overage. When a quota for a metered product
 is exceeded, that product can stop serving until the quota resets or the project
 is upgraded. Current published Firestore free quota: 1 GiB stored data, 50,000
 document reads/day, 20,000 writes/day, 20,000 deletes/day and 10 GiB outbound
-transfer/month. Hosting includes up to 10 GB stored content and 10 GB/month
-data transfer. Monitor usage rather than assuming unlimited free usage.
+transfer/month. Hosting includes up to 10 GB stored content and up to 360 MB/day
+data transfer on Spark. Exceeding a Spark quota stops that product until quota resets or the project is upgraded. Monitor usage rather than assuming unlimited free usage.
 
 ## One-time Firebase Console setup
 
