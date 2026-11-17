@@ -1,0 +1,380 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath(orgId, uid) {
+      return /databases/$(database)/documents/organizations/$(orgId)/users/$(uid);
+    }
+
+    function hasProfile(orgId) {
+      return signedIn() && exists(userPath(orgId, request.auth.uid));
+    }
+
+    function profile(orgId) {
+      return get(userPath(orgId, request.auth.uid)).data;
+    }
+
+    function activeMember(orgId) {
+      return hasProfile(orgId) && profile(orgId).active == true;
+    }
+
+    function role(orgId) {
+      return activeMember(orgId) ? profile(orgId).role : "";
+    }
+
+    function roleIn(orgId, roles) {
+      return activeMember(orgId) && role(orgId) in roles;
+    }
+
+    function isFounder(orgId) {
+      return roleIn(orgId, ["Founder"]);
+    }
+
+    function isFullManager(orgId) {
+      return roleIn(orgId, ["Founder", "CEO", "CTO", "COO", "Admin", "Team Leader"]);
+    }
+
+    function canManageUsers(orgId) {
+      return roleIn(orgId, ["Founder", "CEO", "Admin"]);
+    }
+
+    function isSalesManager(orgId) {
+      return roleIn(orgId, [
+        "Founder", "CEO", "Admin", "CRO", "VP of Sales", "Sales Manager",
+        "Sales Team Lead", "CMO", "Marketing Manager", "Marketing Team Lead"
+      ]);
+    }
+
+    function isSalesRole(orgId) {
+      return roleIn(orgId, [
+        "Founder", "CEO", "Admin", "CRO", "VP of Sales", "Sales Manager",
+        "Sales Team Lead", "Senior Sales Executive", "Sales Executive",
+        "Sales Development Representative", "Business Development Executive",
+        "Account Executive", "Account Manager", "Sales Operations Specialist",
+        "CMO", "Marketing Manager", "Marketing Team Lead", "SEO Specialist",
+        "Performance Marketing Specialist", "Social Media Executive",
+        "Content Strategist", "Senior Content Writer", "Content Writer",
+        "Video Editor", "Creative Producer", "Marketing Analyst", "Content Team"
+      ]);
+    }
+
+    function isFinanceRole(orgId) {
+      return roleIn(orgId, [
+        "Founder", "CEO", "Admin", "CFO", "Finance Manager", "Finance Team Lead",
+        "Senior Accountant", "Accountant", "Finance Analyst", "Payroll Specialist",
+        "Legal & Compliance Manager", "Legal Executive", "Compliance Analyst"
+      ]);
+    }
+
+    function isProjectRole(orgId) {
+      return roleIn(orgId, [
+        "Founder", "CEO", "Admin", "CTO", "COO", "Team Leader",
+        "VP of Engineering", "Engineering Manager", "Engineering Team Lead",
+        "Principal Engineer", "Senior Software Engineer", "Software Engineer",
+        "Junior Software Engineer", "Frontend Developer", "Backend Developer",
+        "Full Stack Developer", "Mobile App Developer", "DevOps Engineer",
+        "Cloud Engineer", "AI/ML Engineer", "Data Scientist", "Data Analyst",
+        "Data Engineer", "Database Administrator", "Product Manager",
+        "Product Team Lead", "Product Designer", "Design Manager", "Design Team Lead",
+        "Principal Designer", "Senior Designer", "UI/UX Designer", "Junior UI/UX Designer",
+        "Graphic Designer", "Brand Designer", "Motion Designer", "Junior Designer",
+        "UX Researcher", "QA Manager", "QA Team Lead", "Senior QA Engineer",
+        "QA Engineer", "Automation Test Engineer", "Junior QA Engineer",
+        "Project Manager", "Project Team Lead", "Senior Project Coordinator",
+        "Project Coordinator", "Business Analyst", "Business Operations Executive",
+        "Procurement Specialist", "Developer", "Designer", "Content Team",
+        "Support Executive", "Senior Support Executive", "Support Team Lead",
+        "Support Manager", "Customer Success Manager", "Customer Success Team Lead",
+        "Customer Success Executive", "Technical Support Engineer"
+      ]);
+    }
+
+    function isSupportRole(orgId) {
+      return roleIn(orgId, [
+        "Founder", "CEO", "Admin", "Support Manager", "Support Team Lead",
+        "Senior Support Executive", "Support Executive", "Customer Success Manager",
+        "Customer Success Team Lead", "Customer Success Executive",
+        "Technical Support Engineer"
+      ]);
+    }
+
+    function isMeetingScheduler(orgId) {
+      return roleIn(orgId, [
+        "Founder", "CEO", "Admin", "CTO", "COO", "Team Leader",
+        "Project Manager", "Project Team Lead", "Engineering Team Lead",
+        "Design Team Lead", "QA Team Lead", "Sales Team Lead", "Marketing Team Lead",
+        "Support Team Lead", "Finance Team Lead", "HR Team Lead", "IT Team Lead"
+      ]);
+    }
+
+    function isClient(orgId) {
+      return roleIn(orgId, ["Client"]);
+    }
+
+    function clientMatches(orgId, data) {
+      return isClient(orgId) && (
+        data.get("clientUid", "") == request.auth.uid ||
+        (
+          profile(orgId).get("clientId", "") != "" &&
+          data.get("clientId", "") == profile(orgId).get("clientId", "")
+        )
+      );
+    }
+
+    function assignedToCaller(data) {
+      return data.get("assignedToUid", "") == request.auth.uid ||
+        data.get("ownerUid", "") == request.auth.uid ||
+        data.get("createdByUid", "") == request.auth.uid ||
+        data.get("uploadedByUid", "") == request.auth.uid;
+    }
+
+    function participant(data) {
+      return request.auth.uid in data.get("participantUids", []) ||
+        request.auth.uid in data.get("memberUids", []) ||
+        request.auth.uid in data.get("attendeeUids", []);
+    }
+
+    function canReadCollection(orgId, collectionName) {
+      return isFullManager(orgId) ||
+        (collectionName == "leads" && isSalesRole(orgId)) ||
+        (collectionName == "clients" && (
+          isSalesRole(orgId) || isFinanceRole(orgId) || isProjectRole(orgId) ||
+          isSupportRole(orgId) || isClient(orgId)
+        )) ||
+        (collectionName == "projects" && (isProjectRole(orgId) || isClient(orgId))) ||
+        (collectionName == "milestones" && (isProjectRole(orgId) || isClient(orgId))) ||
+        (collectionName == "tasks" && (isProjectRole(orgId) || isClient(orgId))) ||
+        (collectionName == "quotations" && (isSalesRole(orgId) || isClient(orgId))) ||
+        (collectionName in ["invoices", "payments"] && (isFinanceRole(orgId) || isClient(orgId))) ||
+        (collectionName == "expenses" && isFinanceRole(orgId)) ||
+        (collectionName == "tickets" && (isSupportRole(orgId) || isProjectRole(orgId) || isClient(orgId))) ||
+        (collectionName == "documents" && (isProjectRole(orgId) || isSalesRole(orgId) || isFinanceRole(orgId) || isSupportRole(orgId) || isClient(orgId))) ||
+        (collectionName == "approvals" && (isProjectRole(orgId) || isClient(orgId))) ||
+        (collectionName == "meetings" && (isProjectRole(orgId) || isSalesRole(orgId) || isFinanceRole(orgId) || isSupportRole(orgId) || isClient(orgId))) ||
+        (collectionName == "messages" && activeMember(orgId)) ||
+        (collectionName == "audit" && activeMember(orgId)) ||
+        (collectionName == "aiChats" && activeMember(orgId)) ||
+        (collectionName == "notifications" && activeMember(orgId));
+    }
+
+    function canReadRecord(orgId, collectionName, data) {
+      return isFullManager(orgId) ||
+        (
+          collectionName == "leads" &&
+          (isSalesManager(orgId) || (isSalesRole(orgId) && data.get("assignedToUid", "") == request.auth.uid))
+        ) ||
+        (
+          collectionName == "clients" &&
+          (clientMatches(orgId, data) || isSalesRole(orgId) || isFinanceRole(orgId) || isProjectRole(orgId) || isSupportRole(orgId))
+        ) ||
+        (
+          collectionName in ["projects", "milestones", "tasks"] &&
+          (clientMatches(orgId, data) || (
+            isProjectRole(orgId) && (
+              assignedToCaller(data) || participant(data) ||
+              data.get("projectManagerUid", "") == request.auth.uid
+            )
+          ))
+        ) ||
+        (collectionName == "quotations" && (clientMatches(orgId, data) || isSalesRole(orgId))) ||
+        (collectionName in ["invoices", "payments"] && (clientMatches(orgId, data) || isFinanceRole(orgId))) ||
+        (collectionName == "expenses" && isFinanceRole(orgId)) ||
+        (
+          collectionName == "tickets" &&
+          (clientMatches(orgId, data) || (
+            (isSupportRole(orgId) || isProjectRole(orgId)) &&
+            (assignedToCaller(data) || participant(data) || isSupportRole(orgId))
+          ))
+        ) ||
+        (
+          collectionName == "documents" &&
+          (clientMatches(orgId, data) || (
+            (isProjectRole(orgId) || isSalesRole(orgId) || isFinanceRole(orgId) || isSupportRole(orgId)) &&
+            (assignedToCaller(data) || participant(data))
+          ))
+        ) ||
+        (collectionName == "approvals" && clientMatches(orgId, data)) ||
+        (collectionName == "meetings" && (clientMatches(orgId, data) || (activeMember(orgId) && (assignedToCaller(data) || participant(data))))) ||
+        (collectionName == "messages" && activeMember(orgId) && (assignedToCaller(data) || participant(data))) ||
+        (collectionName == "audit" && activeMember(orgId) && data.get("actorUid", "") == request.auth.uid) ||
+        (collectionName == "aiChats" && activeMember(orgId) && data.get("ownerUid", "") == request.auth.uid) ||
+        (collectionName == "notifications" && activeMember(orgId) && data.get("ownerUid", "") == request.auth.uid);
+    }
+
+    function canCreateRecord(orgId, collectionName, data) {
+      return isFullManager(orgId) ||
+        (collectionName == "leads" && isSalesRole(orgId) && (
+          isSalesManager(orgId) || data.get("assignedToUid", "") == request.auth.uid
+        )) ||
+        (collectionName == "clients" && (isSalesRole(orgId) || isFinanceRole(orgId) || isProjectRole(orgId) || isSupportRole(orgId))) ||
+        (collectionName == "projects" && isProjectRole(orgId) && data.get("createdByUid", "") == request.auth.uid) ||
+        (collectionName == "tasks" && isProjectRole(orgId) && (
+          data.get("createdByUid", "") == request.auth.uid || data.get("assignedToUid", "") == request.auth.uid
+        )) ||
+        (collectionName == "messages" && activeMember(orgId) && data.get("createdByUid", "") == request.auth.uid) ||
+        (collectionName == "meetings" && isMeetingScheduler(orgId) && data.get("createdByUid", "") == request.auth.uid) ||
+        (collectionName == "documents" && activeMember(orgId) && data.get("uploadedByUid", "") == request.auth.uid) ||
+        (collectionName == "tickets" && (
+          (isSupportRole(orgId) && data.get("createdByUid", "") == request.auth.uid) ||
+          (clientMatches(orgId, data) && data.get("createdByUid", "") == request.auth.uid)
+        )) ||
+        (collectionName == "audit" && activeMember(orgId) && data.get("actorUid", "") == request.auth.uid) ||
+        (collectionName == "aiChats" && activeMember(orgId) && data.get("ownerUid", "") == request.auth.uid) ||
+        (collectionName == "notifications" && activeMember(orgId) && data.get("ownerUid", "") == request.auth.uid);
+    }
+
+    function canUpdateRecord(orgId, collectionName, oldData, newData) {
+      return isFullManager(orgId) ||
+        (
+          collectionName == "leads" && isSalesRole(orgId) &&
+          (isSalesManager(orgId) || oldData.get("assignedToUid", "") == request.auth.uid) &&
+          newData.diff(oldData).affectedKeys().hasOnly([
+            "status", "priority", "nextAction", "nextActionAt", "notes", "updatedAt"
+          ]) &&
+          newData.get("assignedToUid", "") == oldData.get("assignedToUid", "")
+        ) ||
+        (
+          collectionName == "tasks" && isProjectRole(orgId) &&
+          oldData.get("assignedToUid", "") == request.auth.uid &&
+          newData.diff(oldData).affectedKeys().hasOnly([
+            "status", "actHours", "comments", "attachments", "workNotes", "updatedAt"
+          ])
+        ) ||
+        (
+          collectionName == "messages" && activeMember(orgId) &&
+          oldData.get("createdByUid", "") == request.auth.uid &&
+          newData.diff(oldData).affectedKeys().hasOnly(["text", "read", "updatedAt"])
+        ) ||
+        (
+          collectionName == "tickets" &&
+          (clientMatches(orgId, oldData) || (isSupportRole(orgId) && oldData.get("assignedToUid", "") == request.auth.uid)) &&
+          newData.diff(oldData).affectedKeys().hasOnly(["comments", "status", "resolvedAt", "updatedAt"])
+        ) ||
+        (
+          collectionName == "documents" && activeMember(orgId) &&
+          oldData.get("uploadedByUid", "") == request.auth.uid &&
+          newData.diff(oldData).affectedKeys().hasOnly(["name", "folder", "version", "uploadedAt", "size", "updatedAt"])
+        ) ||
+        (
+          collectionName == "approvals" && clientMatches(orgId, oldData) &&
+          newData.diff(oldData).affectedKeys().hasOnly(["status", "feedback", "version", "uploadedAt", "clientFeedback", "updatedAt"])
+        ) ||
+        (
+          collectionName == "notifications" && activeMember(orgId) &&
+          oldData.get("ownerUid", "") == request.auth.uid &&
+          newData.diff(oldData).affectedKeys().hasOnly(["read", "updatedAt"])
+        ) ||
+        (
+          collectionName == "aiChats" && activeMember(orgId) &&
+          oldData.get("ownerUid", "") == request.auth.uid &&
+          newData.get("ownerUid", "") == request.auth.uid
+        );
+    }
+
+    function validUserRole(value) {
+      return value in [
+        "Founder", "CEO", "CTO", "COO", "CFO", "CMO", "CHRO", "CPO", "CRO",
+        "CIO", "CISO", "Admin", "Executive Assistant", "VP of Engineering",
+        "Engineering Manager", "Engineering Team Lead", "Principal Engineer",
+        "Senior Software Engineer", "Software Engineer", "Junior Software Engineer",
+        "Frontend Developer", "Backend Developer", "Full Stack Developer",
+        "Mobile App Developer", "DevOps Engineer", "Cloud Engineer", "AI/ML Engineer",
+        "Data Scientist", "Data Analyst", "Data Engineer", "Database Administrator",
+        "VP of Product", "Product Manager", "Product Team Lead", "Product Designer",
+        "Design Manager", "Design Team Lead", "Principal Designer", "Senior Designer",
+        "UI/UX Designer", "Junior UI/UX Designer", "Graphic Designer", "Brand Designer",
+        "Motion Designer", "Junior Designer", "UX Researcher", "QA Manager",
+        "QA Team Lead", "Senior QA Engineer", "QA Engineer", "Automation Test Engineer",
+        "Junior QA Engineer", "VP of Sales", "Sales Manager", "Sales Team Lead",
+        "Senior Sales Executive", "Sales Executive", "Sales Development Representative",
+        "Business Development Executive", "Account Executive", "Account Manager",
+        "Sales Operations Specialist", "Marketing Manager", "Marketing Team Lead",
+        "SEO Specialist", "Performance Marketing Specialist", "Social Media Executive",
+        "Content Strategist", "Senior Content Writer", "Content Writer", "Video Editor",
+        "Creative Producer", "Marketing Analyst", "VP of Operations", "Operations Manager",
+        "Operations Team Lead", "Project Manager", "Project Team Lead",
+        "Senior Project Coordinator", "Project Coordinator", "Business Analyst",
+        "Business Operations Executive", "Procurement Specialist", "HR Manager",
+        "HR Team Lead", "Talent Acquisition Specialist", "HR Executive", "HR Coordinator",
+        "Learning & Development Specialist", "Finance Manager", "Finance Team Lead",
+        "Senior Accountant", "Accountant", "Finance Analyst", "Payroll Specialist",
+        "Legal & Compliance Manager", "Legal Executive", "Compliance Analyst",
+        "Customer Success Manager", "Customer Success Team Lead",
+        "Customer Success Executive", "Support Manager", "Support Team Lead",
+        "Senior Support Executive", "Support Executive", "Technical Support Engineer",
+        "Developer", "Designer", "Content Team", "IT Manager", "IT Team Lead",
+        "System Administrator", "IT Support Engineer", "Security Manager",
+        "Security Team Lead", "Security Analyst", "Team Leader", "Intern", "Staff", "Client"
+      ];
+    }
+
+    match /organizations/{orgId}/users/{userId} {
+      allow get: if activeMember(orgId) && (
+        request.auth.uid == userId || canManageUsers(orgId)
+      );
+      allow list: if canManageUsers(orgId);
+
+      allow create: if canManageUsers(orgId) &&
+        validUserRole(request.resource.data.role) &&
+        (request.resource.data.role != "Founder" || isFounder(orgId)) &&
+        request.resource.data.active == true &&
+        request.resource.data.keys().hasOnly([
+          "name", "email", "role", "active", "clientId", "phone", "dept",
+          "skills", "joined", "createdAt", "updatedAt"
+        ]);
+
+      allow update: if (
+        isFounder(orgId) ||
+        (
+          canManageUsers(orgId) &&
+          resource.data.role != "Founder" &&
+          request.resource.data.role != "Founder"
+        )
+      ) && validUserRole(request.resource.data.role) ||
+        (
+          activeMember(orgId) &&
+          request.auth.uid == userId &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "phone", "skills", "avatarUrl", "lastSeenAt", "updatedAt"
+          ])
+        );
+
+      // Disable profiles instead of deleting them. Authentication accounts are
+      // not deletable from a web client on Spark without a trusted Admin backend.
+      allow delete: if false;
+    }
+
+    match /organizations/{orgId}/settings/{settingId} {
+      allow read: if activeMember(orgId) && (
+        settingId == "public" || isFullManager(orgId)
+      );
+      allow write: if isFullManager(orgId);
+    }
+
+    match /organizations/{orgId}/{collectionName}/{recordId} {
+      allow get, list: if collectionName != "users" &&
+        collectionName != "settings" &&
+        activeMember(orgId) &&
+        canReadCollection(orgId, collectionName) &&
+        canReadRecord(orgId, collectionName, resource.data);
+
+      allow create: if collectionName != "users" &&
+        collectionName != "settings" &&
+        activeMember(orgId) &&
+        canCreateRecord(orgId, collectionName, request.resource.data);
+
+      allow update: if collectionName != "users" &&
+        collectionName != "settings" &&
+        activeMember(orgId) &&
+        canUpdateRecord(orgId, collectionName, resource.data, request.resource.data);
+
+      allow delete: if collectionName != "users" &&
+        collectionName != "settings" &&
+        isFullManager(orgId);
+    }
+  }
+}
