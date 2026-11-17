@@ -20,7 +20,7 @@ This branch is a migration foundation, **not a live cutover**.
 - [ ] Add automated Firestore Rules tests and run them in the Emulator Suite.
 - [ ] Test role-based flows with Founder, team member and Client accounts.
 - [ ] Export and preserve local browser data; test import.
-- [ ] Enable the Email/Password sign-in provider after the user confirms at action time.
+- [x] Enable Firebase Authentication Email/Password sign-in.
 - [ ] Publish the tested Firestore rules and indexes to the existing database.
 - [ ] Deploy a preview to Firebase Hosting and verify all CRM workflows.
 - [ ] Approve production cutover separately.
